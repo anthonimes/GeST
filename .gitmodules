@@ -1,0 +1,6 @@
+[submodule "YeAST/nfm2vec"]
+	path = YeAST/nfm2vec
+	url = https://github.com/anthonimes/nfm2vec.git
+[submodule "YeAST/utils/walklets"]
+	path = YeAST/utils/walklets
+	url = https://github.com/benedekrozemberczki/walklets.git
