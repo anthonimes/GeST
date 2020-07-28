@@ -11,13 +11,23 @@ from skimage.metrics import (adapted_rand_error,
 from sklearn import cluster as cl
 from sklearn import metrics
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
 
 from node2vec import Node2Vec
+from stellargraph.data import BiasedRandomWalk
+from stellargraph import StellarGraph
 
 from nfm2vec.src.nfm2vec.nfm import get_nfm_embeddings as nfm 
+from utils.walklets.src.walklets import WalkletMachine
 from utils.parse_matlab import get_groundtruth
 
+from karateclub.node_embedding.neighbourhood import HOPE
+from karateclub.node_embedding.neighbourhood import DeepWalk
 from karateclub.node_embedding.neighbourhood import Walklets
+from karateclub.node_embedding.neighbourhood import GraRep
+from karateclub.node_embedding.neighbourhood import LaplacianEigenmaps
+from karateclub.node_embedding.neighbourhood import Diff2Vec
 
 from math import exp, sqrt, ceil
 from os import walk
@@ -26,8 +36,9 @@ from statistics import mean
 
 import matplotlib.pyplot as plt
 import argparse,numpy
+import community as community_louvain
 import networkx as nx
-import json
+import cv2
 import warnings, sys
 warnings.filterwarnings("ignore")
 
@@ -95,15 +106,15 @@ def _apply_k_means(NUM_CLUSTER, embeddings,image,labels,method="",groundtruth=No
     a,b,c,d,e=metrics(groundtruth,labels_from_communities_kmeans,False)
 
     # show the output of SLIC+Louvain
-    '''fig = plt.figure("segmentation after "+method+" "+str(NUM_CLUSTER)+"-means")
+    fig = plt.figure("segmentation after "+method+" "+str(NUM_CLUSTER)+"-means")
     ax = fig.add_subplot(1,1,1)
     colored_regions_kmeans = color.label2rgb(labels_from_communities_kmeans, image, kind='overlay')#,colors=[(1,1,1)])
     #ax.imshow(mark_boundaries(image, labels_from_communities_kmeans, color=(0,0,0), mode='thick'))
     ax.imshow(mark_boundaries(colored_regions_kmeans, labels_from_communities_kmeans, color=(1,1,1), mode='thick'))
-    plt.axis("off")'''
+    plt.axis("off")
 
     #plt.show()
-    return a,b,c,d,e,labels_from_communities_kmeans
+    return a,b,c,d,e
 
 
 def parse_oslom(cluster):
@@ -118,7 +129,6 @@ def _distance_r_graph(G,R,image=None,means=None,width=None,height=None,threshold
     Gr = nx.Graph(G)
     # removing edges below threshold
     maxdelta=0
-    pairs=0
     edges = set()
     print("starting from graph with {} vertices and {} edges".format(len(G),len(G.edges())))
     # for every vertex of G
@@ -147,62 +157,9 @@ def _distance_r_graph(G,R,image=None,means=None,width=None,height=None,threshold
         # the highest value means same pixel
         edges = [(e[0],e[1],1-(e[2]/maxdelta)) for e in edges]
         Gr.add_weighted_edges_from(edges)
+        print("ending with graph with {} vertices and {} edges".format(len(Gr),len(Gr.edges())))
         return edges,Gr
     else:
-        '''for u,v in G.edges():
-            dL=(mean_lab[u-1][0]-mean_lab[v-1][0])**2
-            da=(mean_lab[u-1][1]-mean_lab[v-1][1])**2
-            db=(mean_lab[u-1][2]-mean_lab[v-1][2])**2
-            sim = sqrt(dL+da+db)
-            #Gr[u][v]['weight']=sim
-            #Gr.add_edge(u,v,weight=sim)
-            edges.add((u,v,sim))
-            #if(sim<=threshold):
-            #    Gr[u][v]['weight']=sim
-            #else:
-            #    Gr.remove_edge(u,v)
-        for u in G.nodes():
-            # we get its distance-R induced subgraph
-            #Ir = nx.ego_graph(G,u,R)
-            Ir = list(nx.single_source_shortest_path_length(G ,source=u, cutoff=R).keys())
-            #print(Ir)
-            # we then add an edge between u and every vertex in Ir, with proper weight
-            #for v in Ir.nodes():
-            for v in Ir:
-                if(u != v):
-                    dL=(mean_lab[u-1][0]-mean_lab[v-1][0])**2
-                    da=(mean_lab[u-1][1]-mean_lab[v-1][1])**2
-                    db=(mean_lab[u-1][2]-mean_lab[v-1][2])**2
-                    sim = sqrt(dL+da+db)
-                    #if (sim == 0):
-                    #    print(u,v)
-                    # FIXME: do we need HIGH or SMALL weights?!
-                    #if(sim<=threshold and sim > 0):
-                        #Gr.add_edge(u,v,weight=sim)
-                        # FIXME: WHAT IS THE IMPACT OF WEIGHT 1 ON WALKLETS??
-                        #edges.add((u-1,v-1,1.))
-                        # HOW THE FUCK CAN 0 HAPPEN?
-                    #Gr.add_edge(u,v,weight=sim)
-                    edges.add((u,v,sim))
-                        # removing useless edges --- UGLY NEED TO BE FIXED
-                    #elif Gr.has_edge(u,v):
-                    #    Gr.remove_edge(u,v)
-
-        # normalizing
-        maxsim=max(edges, key=lambda x: x[2])[2]
-        #edges=list(edges)
-        #edges=[(e[0],e[1],e[2]/maxsim) for e in edges]
-        #edges=[(e[0],e[1],exp(-1./e[2])) for e in edges]
-        #edges=[e for e in edges if e[2] != 0 and e[2] != {}]
-        edges=[e for e in edges if e[2]<=threshold]
-        Gc=nx.Graph()
-        Gc.add_weighted_edges_from(edges)
-        #for u,v in Gr.edges():
-        #    Gr[u][v]['weight']/=maxsim
-        #    #Gr[u][v]['weight']=1-Gr[u][v]['weight']'
-        #to_remove=[(e[0],e[1]) for e in Gr.edges(data='weight')if e[2] > threshold]
-        #Gr.remove_edges_from(to_remove)
-        return edges,Gc'''
         for u,v in Gr.edges():
             dL=(mean_lab[u-1][0]-mean_lab[v-1][0])**2
             da=(mean_lab[u-1][1]-mean_lab[v-1][1])**2
@@ -282,7 +239,6 @@ if __name__ == "__main__":
     # load the image and convert it to a floating point data type
     for (dirpath, dirnames, filenames) in walk(path_val):
         for filename in filenames:
-            print("IMAGE:",filename)
             image = io.imread(dirpath+filename)
             image = img_as_float(image)
             image_lab = color.rgb2lab(image)
@@ -293,7 +249,7 @@ if __name__ == "__main__":
             # apply SLIC and extract (approximately) the supplied number of segments
             numSegments = 350
             # labels with 0 are ignored, seems legit? --- ENFORCE STARTING AT 1, START_LABEL IS FUCKING DUMP
-            labels = 1+slic(image, n_segments = numSegments, compactness=25, convert2lab=True, start_label=0)
+            labels = 1+slic(image, n_segments = numSegments, compactness=75, convert2lab=True, start_label=0)
             print("number of regions from SLIC: {}".format(numpy.amax(labels)))
 
             fig = plt.figure("SLIC")
@@ -322,59 +278,28 @@ if __name__ == "__main__":
             print("done.")
 
             gt_boundaries, gt_segmentation = get_groundtruth(gt_val+filename.split(".")[0])
-            for i in range(5):
-                fig = plt.figure("groundtruth segmentation")
-                ax = fig.add_subplot(1,1,1)
-                colored_regions = color.label2rgb(gt_segmentation[i], image, bg_label=0)
-                ax.imshow(mark_boundaries(colored_regions, gt_segmentation[i], color=(1,1,1), mode='thick'))
-                plt.axis("off")
-                plt.savefig("groundtruth/segmentation/"+filename.split(".")[0]+"_"+str(i+1)+".png")
-
-            '''number_of_segments = []
-            # connectivity 2 means 8 neighbors
-            G = graph.RAG(labels,connectivity=1)
-            #G.add_node(0)
-
-            # computing distance-R graph 
-            distance=12
-            edges,Gr = _distance_r_graph(G,distance,means=mean_lab,threshold=15)
-            pairs=(len(Gr)*(len(Gr)-1))/2
-            print("generated {} vertices and {} edges graph ({} pairs)".format(len(Gr),len(Gr.edges()),pairs))
-            nx.write_weighted_edgelist(Gr, "graphs/"+filename.split(".")[0]+".wgt", delimiter='\t')
-            #nx.write_gpickle(Gr, filename.split(".")[0]+".pkl")
-
-            # FIXME: should be done everytime
-            node2vec = Node2Vec(Gr, dimensions=32, walk_length=20, num_walks=10, workers=1)  # Use temp_folder for big graphs
-            model = node2vec.fit(window=5, min_count=1)  # Any keywords acceptable by gensim.Word2Vec can be passed, `diemnsions` and `workers` are automatically passed (from the Node2Vec constructor)
-            embn2v = []
-            for node in Gr.nodes():
-                embn2v.append(model.wv.get_vector(str(node)))
-            for i in range(5):
-                number_of_segments.append(numpy.amax(gt_segmentation[i]))
-
-            for i in [number_of_segments.index(min(number_of_segments)), number_of_segments.index(max(number_of_segments))]:
+            for i in range(1):
                 print("SEGMENTATION NUMBER: {}".format(i+1))
                 print("number of segments: {}".format(numpy.amax(gt_segmentation[i])))
-                fig = plt.figure("groundtruth boundaries")
+                '''fig = plt.figure("groundtruth boundaries")
                 ax = fig.add_subplot(1,1,1)
-                ax.imshow(mark_boundaries(image, gt_boundaries[i], color=(0,0,0), mode='thick'))
-                fig = plt.figure("groundtruth segmentation")
+                ax.imshow(mark_boundaries(image, gt_boundaries[i], color=(0,0,0), mode='thick'))'''
+                '''fig = plt.figure("groundtruth segmentation")
                 ax = fig.add_subplot(1,1,1)
                 colored_regions_gt = color.label2rgb(gt_segmentation[i], image, alpha=1, kind='overlay')#,colors=[(1,1,1)])
                 ax.imshow(mark_boundaries(colored_regions_gt, gt_segmentation[i], color=(0,0,0), mode='thick'))
-                plt.axis("off")
+                plt.axis("off")'''
 
                 labels_felzenszwalb = felzenszwalb(image,scale=300)
-                a,b,c,d,e=metrics(gt_segmentation[i],labels_felzenszwalb,True)
-                colored_regions = color.label2rgb(labels_felzenszwalb, image, bg_label=0)
+                metrics(gt_segmentation[i],labels_felzenszwalb,True)
+                '''colored_regions = color.label2rgb(labels_felzenszwalb, image, bg_label=0)
                 fig = plt.figure("felzenszwalb")
                 ax = fig.add_subplot(1,1,1)
-                plt.xlabel(str(a))
                 ax.imshow(mark_boundaries(colored_regions, labels_felzenszwalb, color=(1,1,1), mode='thick'))
-                plt.savefig(filename.split(".")[0]+"_felzenswalb_"+"_"+str(number_of_segments[i])+"_"+str(i+1)+".png")
+                plt.show()'''
 
                 # computing adjacency matrix --- need to refine to distance-limited RAG
-                adjacency = numpy.zeros((len(numpy.unique(labels))+1, len(numpy.unique(labels))+1))
+                '''adjacency = numpy.zeros((len(numpy.unique(labels))+1, len(numpy.unique(labels))+1))
                 pairs=0
                 total_pairs=0
                 for i in range(1,len(adjacency)):
@@ -390,27 +315,70 @@ if __name__ == "__main__":
                             adjacency[i][j] = sim
                             adjacency[j][i] = sim
 
-                print("{} pairs preserved over {}".format(pairs,total_pairs))
-                # Node2Vec
+                print("{} pairs preserved over {}".format(pairs,total_pairs))'''
+                # connectivity 2 means 8 neighbors
+                G = graph.RAG(labels,connectivity=1)
+                #G.add_node(0)
 
-                are, prec, rec, splits, merges, segs = [], [], [], [], [], []
-                for NUM_CLUSTER in NUM_CLUSTERS:
-                    a,b,c,d,e,f=_apply_k_means(NUM_CLUSTER,numpy.asarray(embn2v),image,labels,method="Node2Vec",groundtruth=gt_segmentation[i])
-                    are.append(a)
-                    prec.append(b)
-                    rec.append(c)
-                    splits.append(d)
-                    merges.append(e)
-                    segs.append(f)
-                print("Adapted rand error: {}, segmentation {}".format(min(are),are.index(min(are))+2))
-                fig = plt.figure("segmentation after Node2Vec "+str(are.index(min(are))+2)+"-means")
-                ax = fig.add_subplot(1,1,1)
-                colored_regions_kmeans = color.label2rgb(segs[are.index(min(are))], image, kind='overlay')#,colors=[(1,1,1)])
-                #ax.imshow(mark_boundaries(image, labels_from_communities_kmeans, color=(0,0,0), mode='thick'))
-                ax.imshow(mark_boundaries(colored_regions_kmeans, segs[are.index(min(are))], color=(1,1,1), mode='thick'))
-                plt.xlabel(str(min(are))+" ("+str(are.index(min(are))+2)+"-means)")
-                #plt.axis("off")
-                plt.savefig(filename.split(".")[0]+"_"+str(number_of_segments[i])+"_"+str(i+1)+".png")'''
+                # computing distance-R graph 
+                distance=12
+                print("computing adjacency graph with distance {}".format(distance))
+                edges,Gr = _distance_r_graph(G,distance,means=mean_lab,threshold=15)
+                pairs=(len(Gr)*(len(Gr)-1))/2
+                print("generated {} vertices and {} edges graph ({} pairs)".format(len(Gr),len(Gr.edges()),pairs))
+                nx.write_weighted_edgelist(Gr, 'graph.wgt', delimiter='\t')
+                print("done")
+
+                methods = {
+                    "GraRep": grarep,
+                    "Walklets": walklets,
+                    "Hope": hope,
+                    "Deepwalk": deepwalk,
+                    "Diff2vec": diff2vec,
+                    "Laplacianeigenmaps": le
+                }
+
+                # FIXME: G HAS NODES 1->N, Gr HAS 0->N-1: IS EVERYTHING COHERENT WITH K-MEANS????
+                #embeddings_liste = [ "Hope", "Deepwalk", "Diff2vec", "Walklets" ]
+                embeddings_liste = [ 'Walklets' ]
+                method_embeddings = [ (emb, methods[emb]) for emb in embeddings_liste ]
+    
+                '''for idx, (name, method) in enumerate(method_embeddings):
+                    print(name)
+                    Gc=nx.Graph(Gr)
+                    algo=method(32)
+                    #Gc.remove_nodes_from(list(nx.isolates(Gc)))
+                    print(nx.is_connected(Gc))
+                    if nx.is_connected(Gc):
+                        algo.fit(graph=Gc)
+                        embeddings=algo.get_embedding()
+                    are, prec, rec, splits, merges = [], [], [], [], []
+                    for NUM_CLUSTER in NUM_CLUSTERS:
+                        a,b,c,d,e=_apply_k_means(NUM_CLUSTER,embeddings,image,labels,method=name,groundtruth=gt_segmentation[i])
+                    #a,b,c,d,e=_apply_k_means(elbow(WSS(embeddings,30)),embeddings,image,labels,method=name,groundtruth=gt_segmentation[i])
+                        are.append(a)
+                        prec.append(b)
+                        rec.append(c)
+                        splits.append(d)
+                        merges.append(e)
+                    print("Adapted rand error: {}, segmentation {}".format(min(are),are.index(min(are))))'''
+
+            # Node2Vec
+            node2vec = Node2Vec(Gr, dimensions=32, walk_length=20, num_walks=10, workers=1)  # Use temp_folder for big graphs
+            model = node2vec.fit(window=5, min_count=1)  # Any keywords acceptable by gensim.Word2Vec can be passed, `diemnsions` and `workers` are automatically passed (from the Node2Vec constructor)
+            embn2v = []
+            for node in Gr.nodes():
+                embn2v.append(model.wv.get_vector(str(node)))
+            are, prec, rec, splits, merges = [], [], [], [], []
+            for NUM_CLUSTER in NUM_CLUSTERS:
+                a,b,c,d,e=_apply_k_means(NUM_CLUSTER,numpy.asarray(embn2v),image,labels,method="Node2Vec",groundtruth=gt_segmentation[i])
+                are.append(a)
+                prec.append(b)
+                rec.append(c)
+                splits.append(d)
+                merges.append(e)
+            print("Adapted rand error: {}, segmentation {}".format(min(are),are.index(min(are))+2))
+        #a,b,c,d,e=_apply_k_means(elbow(WSS(embeddings,30)),embeddings,image,labels,method=name,groundtruth=gt_segmentation[i])
 
             # trying with Walkets
             '''args=Namespace()
@@ -430,3 +398,83 @@ if __name__ == "__main__":
            
             for NUM_CLUSTER in NUM_CLUSTERS:
                 a,b,c,d,e=_apply_k_means(NUM_CLUSTER,wm.embedding,image,labels,method="Walklets",groundtruth=gt_segmentation[i])'''
+
+            '''partition = community_louvain.best_partition(Gr)
+            print("louvain computed {} communities on {} vertices and {} edges graph".format(max(partition.values())+1,len(Gr),len(Gr.edges())))
+            labels_from_communities = numpy.zeros((labels.shape[0],labels.shape[1]),dtype=int)
+            for i,line in enumerate(labels):
+                for j,value in enumerate(line):
+                    labels_from_communities[i][j] = partition[value]
+
+            fig = plt.figure("segmentation after louvain community detection")
+            ax = fig.add_subplot(1,1,1)
+            colored_regions = color.label2rgb(labels_from_communities, image, bg_label=0)
+            ax.imshow(mark_boundaries(colored_regions, labels_from_communities, color=(1,1,1),  mode='thick'))
+            plt.axis("off")
+
+            partition_vector=list(partition.values())
+            edges = [(edge[0],edge[1],edge[2]) for edge in Gr.edges.data('weight', default=1.)]
+            # nodes are from 0 (empty node) to n
+            weights = [0]+[Gr.degree(u) for u in Gr.nodes()]
+            number_communities = max(partition_vector)+1
+            # +1 needed for dummy node 0
+            nodes = len(Gr)+1
+            # computing embedding vectors --- CSR numpy format: https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csr_matrix.html
+            # FIXME : COMPUTE REAL NODE F-MEASURE VECTORS
+            np,nr,embedding_matrix = nfm(edges, weights, partition_vector, number_communities, nodes)
+
+            labels_from_communities = numpy.zeros((labels.shape[0],labels.shape[1]),dtype=int)
+            for i,line in enumerate(labels):
+                for j,value in enumerate(line):
+                    labels_from_communities[i][j] = partition[value]
+
+            # computing clusters
+            for NUM_CLUSTER in NUM_CLUSTERS:
+                a,b,c,d,e=_apply_k_means(NUM_CLUSTER,embedding_matrix,image,labels,method="louvain",groundtruth=gt_segmentation[0])'''
+
+            # TRYING OSLOM
+            '''argso = Namespace()
+            argso.min_cluster_size = 0
+            argso.oslom_exec = oslom.DEF_OSLOM_EXEC
+            argso.oslom_args = oslom.DEF_OSLOM_ARGS
+            argso.oslom_output = "here"
+            argso.oslom_output_dir = "OSLOM"
+            clusters,logs = oslom.run_in_memory(argso, edges)
+            communities = []
+            for cluster in clusters['clusters']:
+                communities.append(parse_oslom(cluster))
+            partition=dict()
+            for index,community in enumerate(communities):
+                for elt in community:
+                    partition[elt]=index
+            # affect a particular color to homeless nodes --- CRAPPY
+            garbage=max(partition.values())+1
+            print("OSLOM computed {} communities on {} vertices and {} edges graph".format(garbage+1,len(Gr),len(Gr.edges())))
+            # for consistency with embeddings --- this node does not even exist in the graph... ?!
+            partition[0]=garbage
+            for u in Gr.nodes():
+                if u not in partition:
+                    partition[u] = garbage
+            partition_vector=list(partition.values())
+            edges = [(edge[0],edge[1],edge[2]) for edge in Gr.edges.data('weight', default=1.)]
+            # nodes are from 0 (empty node) to n
+            weights = [0]+[Gr.degree(u) for u in Gr.nodes()]
+            number_communities = max(partition_vector)+1
+            # +1 needed for dummy node 0
+            nodes = len(Gr)+1
+            # computing embedding vectors --- CSR numpy format: https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csr_matrix.html
+            np,nr,embedding_matrix = nfm(edges, weights, partition_vector, number_communities, nodes)
+
+            labels_from_communities = numpy.zeros((labels.shape[0],labels.shape[1]),dtype=int)
+            for i,line in enumerate(labels):
+                for j,value in enumerate(line):
+                    labels_from_communities[i][j] = partition[value]
+
+            fig = plt.figure("segmentation after OSLOM community detection")
+            ax = fig.add_subplot(1,1,1)
+            colored_regions = color.label2rgb(labels_from_communities, image, bg_label=0)
+            ax.imshow(mark_boundaries(colored_regions, labels_from_communities, color=(0,0,0), mode='thick'))
+            plt.axis("off")
+
+            # computing clusters
+            _apply_k_means(NUM_CLUSTERS,embedding_matrix,image,labels)'''

@@ -4,3 +4,12 @@
 [submodule "YeAST/utils/walklets"]
 	path = YeAST/utils/walklets
 	url = https://github.com/benedekrozemberczki/walklets.git
+[submodule "YeAST/utils/graphvite"]
+	path = YeAST/utils/graphvite
+	url = https://github.com/DeepGraphLearning/graphvite
+[submodule "YeAST/utils/line"]
+	path = YeAST/utils/line
+	url = https://github.com/snowkylin/line.git
+[submodule "YeAST/utils/DEL"]
+	path = YeAST/utils/DEL
+	url = https://github.com/yun-liu/DEL.git
