@@ -143,3 +143,4 @@ cython_debug/
 dataset/
 GeST/results
 GeST/csv
+algorithms/
