@@ -1,0 +1,17 @@
+==== COSINE THEN PIXELS ====
+
+YOUPI! 130026 996 merged: new segmentation has 7 regions and PRI 0.5715256559420523 from 0.5405111421900439
+YOUPI! 145086 996 merged: new segmentation has 14 regions and PRI 0.8942508298910653 from 0.8937878635480931
+YOUPI! 147091 996 merged: new segmentation has 13 regions and PRI 0.8808531926136884 from 0.8775977626792599
+YOUPI! 148026 996 merged: new segmentation has 11 regions and PRI 0.828872554736266 from 0.8101791850089027
+YOUPI! 167062 996 merged: new segmentation has 5 regions and PRI 0.989865948242637 from 0.8713820340233104
+YOUPI! 175043 996 merged: new segmentation has 5 regions and PRI 0.795996989519216 from 0.3366589309596004
+YOUPI! 210088 996 merged: new segmentation has 1 regions and PRI 0.7059495594255896 from 0.42940577383572875
+YOUPI! 253055 996 merged: new segmentation has 7 regions and PRI 0.9471764227294832 from 0.897234561973013
+YOUPI! 291000 996 merged: new segmentation has 11 regions and PRI 0.8071597457538816 from 0.6859384663472844
+YOUPI! 300091 996 merged: new segmentation has 18 regions and PRI 0.8544789127919484 from 0.8367164829498372
+YOUPI! 304034 996 merged: new segmentation has 5 regions and PRI 0.8285560106375321 from 0.44014846149718545
+YOUPI! 3096 996 merged: new segmentation has 2 regions and PRI 0.8724352986820906 from 0.8700370576508052
+YOUPI! 69040 996 merged: new segmentation has 3 regions and PRI 0.6248039978532449 from 0.43985273111099954
+YOUPI! 86000 996 merged: new segmentation has 12 regions and PRI 0.8547481022683918 from 0.8515157616633333
+YOUPI! 86068 996 merged: new segmentation has 1 regions and PRI 0.7940951428943536 from 0.38303933871836154

@@ -55,7 +55,7 @@ if __name__ == "__main__":
             # loop over the number of segments
             # apply SLIC and extract (approximately) the supplied number of segments
             numSegments = 250
-            labels = slic(image, n_segments = numSegments, compactness=5, start_label=1)
+            labels = 1+slic(image, n_segments = numSegments, compactness=5, start_label=0)
             print(numpy.amax(labels))
             fig = plt.figure("SLIC")
             ax = fig.add_subplot(1, 1, 1)
@@ -91,8 +91,8 @@ if __name__ == "__main__":
                 for j in range(i+1,len(adjacency)):
                     if(i != j):
                         # this is TERRIBLY wrong
-                        sim = cv2.compareHist(all_histo[i], all_histo[j], cv2.HISTCMP_BHATTACHARYYA)
-                        #sim = cv2.compareHist(all_histo[i], all_histo[j], cv2.HISTCMP_INTERSECT)
+                        #sim = cv2.compareHist(all_histo[i], all_histo[j], cv2.HISTCMP_BHATTACHARYYA)
+                        sim = cv2.compareHist(all_histo[i], all_histo[j], cv2.HISTCMP_INTERSECT)
                         try:
                             adjacency[i][j] = exp(-1./sim)
                             adjacency[j][i] = exp(-1./sim)
