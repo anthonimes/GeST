@@ -14,5 +14,8 @@ def get_BSR(filepath):
     BSR = loadmat(filepath)
     return BSR['seg']
 
+def get_GeST(filepath):
+    pickle.load
+
 def _savemat(filepath,segmentation):
     savemat(filepath,{"segs": segmentation},appendmat=False)

@@ -14,7 +14,7 @@ from utils.metrics.pri import probabilistic_rand_index
 
 from os import walk, environ, makedirs
 from statistics import mean, stdev
-import numpy
+import numpy, helper
 import networkx as nx
 import warnings, sys, argparse
 warnings.filterwarnings("ignore")
@@ -137,40 +137,38 @@ def merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     return labels_merge,has_merged
 
 # FIXME: try again to merge ALL images with small pixels, just to see improvements
-def merge_pixels(labels,image_lab,thr_pixels=300,sigma=5):
-    # NOTE; labels must be a matrix-like imaeg
+# FIXME: WORK ON CLUSTERING YOU FUCKING IDIOT
+def merge_pixels(clusters,labels,image_lab,thr_pixels=300,sigma=5):
+    # NOTE; labels must be a matrix-like image
+    clusters_merge = numpy.copy(clusters)
     labels_merge = numpy.copy(labels)
     merged=True
     has_merged=False
     # initial computation, will be maintained during algorithm
-    feature_vector = normalize(numpy.asarray(_color_features(labels_merge,image_lab)))
-    G = graph.RAG(labels_merge,connectivity=2)
+    feature_vector = normalize(numpy.asarray(helper._color_features(labels,image_lab)))
+    G = graph.RAG(labels,connectivity=2)
     while(merged):
-        regions = measure.regionprops(labels_merge)
+        #regions = measure.regionprops(labels_merge)
         # FIXME: totally useless to compute again the ones that have not changed...
         merged=False
-        
-        def _findregion(R):
-            for i in range(len(regions)):
-                if regions[i].label == R:
-                    return i
                 
-        for i in range(len(regions)):
-            Ri = regions[i]
-            lenRi = len(Ri.coords)
-            if(lenRi < thr_pixels):
+        for i in numpy.unique(clusters):
+            Ri = i+1
+            # how many pixels have this label?
+            lenRi = len(numpy.where(labels_merge.flatten()==Ri)[0])
+            if(lenRi > 0 and lenRi < thr_pixels and Ri in G.nodes()):
                 # WARNING: neighbors in graphs are labels, not indices of regions array!
-                neighbors = list(G.neighbors(Ri.label))
-                closest = max([(regions[_findregion(Rj)].label,1-distance.cosine(feature_vector[Ri.label-1],feature_vector[regions[_findregion(Rj)].label-1])) for Rj in neighbors],key=lambda x: x[1])[0]
-                Rj = regions[_findregion(closest)]
-                sim=1-distance.cosine(feature_vector[Ri.label-1],feature_vector[Rj.label-1])
-                if(sim>=0.996):
-                    max_label = Ri if Ri.label > Rj.label else Rj
-                    min_label = Ri if Ri.label < Rj.label else Rj
-                    # could this actually be enough?
-                    #max_label.label = min_label.label
-                    for (x,y) in max_label.coords:
-                        labels_merge[(x,y)] = min_label.label
+                neighbors = list(G.neighbors(Ri))
+                if(neighbors):
+                    closest = max([(Rj,1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])) for Rj in neighbors],key=lambda x: x[1])[0]
+                    Rj = closest
+                    print("merging regions...",Ri,Rj)
+                    sim=1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])
+                    #if(sim>=0.996):
+                    max_label = Ri if Ri > Rj else Rj
+                    min_label = Ri if Ri < Rj else Rj
+                    labels_merge[numpy.where(labels_merge==max_label)] = min_label
+                    clusters_merge[numpy.where(clusters_merge==max_label-1)] = min_label-1
                     merged=True
                     has_merged=True
                     # updating remaining labels
@@ -178,64 +176,59 @@ def merge_pixels(labels,image_lab,thr_pixels=300,sigma=5):
                     #labels_merge=(1+labels_merge).reshape(labels.shape)
                     # updating feature vector
                     #print("PIXE",(feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2)
-                    feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
-                    G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
+                    feature_vector[min_label-1] = (feature_vector[min_label-1]+feature_vector[max_label-1])/2
+                    G = nx.contracted_nodes(G,min_label,max_label,self_loops=False)
             if(merged):
                 break
         if(merged):
             continue
-        
-    _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-    labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged
+    
+    if(has_merged):
+        _, clusters_merge = numpy.unique(clusters_merge,return_inverse=1)
+        clusters_merge=(1+clusters_merge).reshape(clusters.shape)
+    return clusters_merge,has_merged
 
 # FIXME: try again to merge ALL images with small pixels, just to see improvements
-def merge_cosine(labels,image_lab,thr=0.999,sigma=5):
-    # NOTE; labels must be a matrix-like imaeg
-    labels_merge = numpy.copy(labels)
+def merge_cosine(clusters,labels,image_lab,thr=0.999,sigma=5):
+    # NOTE; labels must be a matrix-like image
+    clusters_merge = numpy.copy(clusters)
+    #labels_merge = numpy.copy(labels)
     merged=True
     has_merged=False
     # initial computation, will be maintained during algorithm
-    feature_vector = normalize(numpy.asarray(_color_features(labels_merge,image_lab)))
-    G = graph.RAG(labels_merge,connectivity=2)
+    feature_vector = normalize(numpy.asarray(helper._color_features(labels,image_lab)))
+    G = graph.RAG(labels,connectivity=2)
     while(merged):
-        regions = measure.regionprops(labels_merge)
         # FIXME: totally useless to compute again the ones that have not changed...
         merged=False
         
-        def _findregion(R):
-            for i in range(len(regions)):
-                if regions[i].label == R:
-                    return i
-        
         for u,v in G.edges():
-            Ri=regions[_findregion(u)]
-            Rj=regions[_findregion(v)]
-            #sim=1-distance.cosine(feature_vector[Ri.label-1],feature_vector[Rj.label-1])
-            sim=1-distance.euclidean(feature_vector[Ri.label-1],feature_vector[Rj.label-1])
+            Ri=u
+            Rj=v
+            sim=1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])
+            #sim=1-distance.euclidean(feature_vector[Ri.label-1],feature_vector[Rj.label-1])
             if sim >= thr:
                 #print("similarity merging region {} and {}.".format(Ri.label,Rj.label))
-                max_label = Ri if Ri.label > Rj.label else Rj
-                min_label = Ri if Ri.label < Rj.label else Rj
-                for (x,y) in max_label.coords:
-                    labels_merge[(x,y)] = min_label.label
+                max_label = Ri if Ri > Rj else Rj
+                min_label = Ri if Ri < Rj else Rj
+                clusters_merge[numpy.where(clusters_merge==max_label-1)] = min_label-1
                 merged=True
                 has_merged=True
                 # updating remaining labels
                 #_, labels_merge = numpy.unique(labels_merge,return_inverse=1)
                 #labels_merge=(1+labels_merge).reshape(labels.shape)
                 # updating feature vector
-                feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
-                G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
+                feature_vector[min_label-1] = (feature_vector[min_label-1]+feature_vector[max_label-1])/2
+                G = nx.contracted_nodes(G,min_label,max_label,self_loops=False)
                 #print("COSI",(feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2)
             if(merged):
                 break
         if(merged):
             continue
         
-    _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-    labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged
+    _, clusters_merge = numpy.unique(clusters_merge,return_inverse=1)
+    clusters_merge=(1+clusters_merge).reshape(clusters.shape)
+    return clusters_merge,has_merged
 
 if __name__ == "__main__":
     # construct the argument parser and parse the arguments
@@ -274,7 +267,6 @@ if __name__ == "__main__":
     path_groundtruths = path_groundtruth+folder
     path_images = argsy['path']+"/images/"+folder
     #path_impossible = argsy['path']+"/images/from_BSR"
-    path_impossible = argsy['path']+"/images/hard_msp"
 
     if method == "SLIC":
         common=method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
@@ -311,7 +303,8 @@ if __name__ == "__main__":
 
     makedirs(path_figs,exist_ok=True)
 
-    BEST = []
+    MERGED, RENUM, NORMAL = [], [], []
+    path_impossible = argsy['path']+"/images/from_observation"
     dirpath, dirnames, hardimages = list(walk(path_impossible))[0]
     
     # load the image and convert it to a floating point data type
@@ -325,42 +318,105 @@ if __name__ == "__main__":
                 image_lab = (color.rgb2lab(image) + [0,128,128]) #// [1,1,1]
                 gt_boundaries, gt_segmentation = get_groundtruth(path_groundtruths+filename[:-4]+".mat")
                 
-                Gr = nx.read_gpickle(path_pickles+filename[:-4]+".pkl")
+                Gr = nx.read_gpickle(path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
                 # creating image graph
                 labels = pickle.load(open(path_labels+str(i+1)+"_"+filename[:-4]+".seg","rb"))
+                labels_preseg = pickle.load(open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","rb"))
+                labels_clustering = pickle.load(open(path_clusterings+str(i+1)+"_"+filename[:-4]+".clt","rb"))[0].labels_
                 number_regions = numpy.amax(labels)
                 
-                # FIXME: FIND BEST AMONG CURRENT PARAMETERS WITH MERGE
                 pri=probabilistic_rand_index(gt_segmentation,labels)
+                
+                # FIXME: FIND BEST AMONG CURRENT PARAMETERS WITH MERGE
                 #if(filename in hardimages):
-                if(True):
-                    print("{}: {}".format(i+1,filename[:-4]),end=' ')
+                #if(True):
+                # MERGING CONTIGUOUS REGIONS ONLY IN A FIRST PLACE
+                new_labels_clustering = numpy.copy(labels_clustering)
+                segmentation = numpy.copy(labels)
+                for _label in numpy.unique(labels_clustering):
+                    labelmax = numpy.amax(new_labels_clustering)
+                    # getting regions with this label
+                    vertices = 1+numpy.argwhere(labels_clustering == _label).flatten()
+                    # ugly but if connected, the if will fail...
+                    Gc = Gr if len(Gr.subgraph(vertices).edges())==0 else Gr.subgraph(vertices)
+                    connected_component = sorted(nx.connected_components(Gc), key=len, reverse=True)
+                    if(len(connected_component)>1):
+                        to_relabel=connected_component[1:]
+                        labelcpt=1
+                        for cc in to_relabel:
+                            for vertex in cc:
+                                new_labels_clustering[vertex-1]=labelmax+labelcpt
+                            #print(numpy.unique(new_labels_clustering))
+                            labelcpt+=1
+                           
+                segmentation = numpy.zeros(labels.shape,dtype=int)
+                # computing corresponding new segmentation
+                for l,line in enumerate(labels_preseg):
+                    for j,value in enumerate(line):
+                        segmentation[l][j] = new_labels_clustering[value-1]+1
+                        
+                helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_RENUM.png") 
+                            
+                # contiguous labels
+                #_, segmentation = numpy.unique(segmentation,return_inverse=1)
+                #segmentation=(1+segmentation).reshape(labels.shape)
+                        
+                prirenum=probabilistic_rand_index(gt_segmentation,segmentation)
+                NORMAL.append(pri)
+                RENUM.append(prirenum)
+                      
+                if(filename in hardimages):
+                    print("{}: {}".format(i+1,filename[:-4]))
                     #print("loading done: segmentation with {} labels and PRI {}.".format(numpy.amax(labels),probabilistic_rand_index(gt_segmentation,labels)))
                     #feature_vector = normalize(numpy.asarray(_color_features(labels,image_lab)))
                     #print("feature vector obtained.")
                     #thresholds=cosine_similarity(feature_vector[:,:6])
                     #_,thresholds=_get_Lab_adjacency(labels,image_lab,_sigma)
                     #print("similary matrix obtained")
-                    #if(filename in hardimages):
-                    labels_merged,has_merged=merge_cosine(labels,image_lab,thr=0.96,sigma=_sigma)
+                    print("after cosine...", probabilistic_rand_index(gt_segmentation,segmentation))
+                            
                     #print(has_merged, end=' ')
-                    labels_merged,has_merged=merge_pixels(labels_merged,image_lab,thr_pixels=100,sigma=_sigma)
+                    # FIXME: MERGE ONLY IF A GIVEN THRESHOLD IS RESPECTED
+                    final_clustering,has_merged=merge_pixels(new_labels_clustering,segmentation,image_lab,thr_pixels=200,sigma=_sigma)
+                    
+                    segmentation = numpy.zeros(labels.shape,dtype=int)
+                    # computing corresponding new segmentation
+                    for l,line in enumerate(labels_preseg):
+                        for j,value in enumerate(line):
+                            segmentation[l][j] = final_clustering[value-1]
+                            
+                    print("after both...",probabilistic_rand_index(gt_segmentation,segmentation))
+                    
+                    #if(filename in hardimages):
+                    final_clustering,has_merged=merge_cosine(final_clustering,segmentation,image_lab,thr=0.9995,sigma=_sigma)
+                    
+                    segmentation = numpy.zeros(labels.shape,dtype=int)
+                    # computing corresponding new segmentation
+                    for l,line in enumerate(labels_preseg):
+                        for j,value in enumerate(line):
+                            segmentation[l][j] = final_clustering[value-1]
+                            
+                            
                     #print(has_merged)
                     #labels_merged, has_merged = merge(labels,image_lab,thr_pixels=100,thr=0.999,sigma=_sigma)
-                    print(numpy.amax(labels_merged),numpy.amin(labels_merged),len(numpy.unique(labels_merged)))
-                    primerged=probabilistic_rand_index(gt_segmentation,labels_merged)
-                    print(pri,primerged)
+                    #print(numpy.amax(labels_merged),numpy.amin(labels_merged),len(numpy.unique(labels_merged)))
+                    #labels_merged=segmentation
+                    primerged=probabilistic_rand_index(gt_segmentation,segmentation)
+                    print(numpy.amax(labels_clustering), len(numpy.unique(new_labels_clustering)), len(numpy.unique(final_clustering)),pri,prirenum,primerged)
                     #save._savefig(labels_merged, image, path_figs+str(i+1)+"_"+filename[:-4]+"_MERGED.png") 
-                    if(primerged>pri):
+                    #if(primerged>pri):
                     #if(True):
                     #    print("YOUPI! "+filename[:-4]+" merged: new segmentation has {} regions and PRI {} from {}".format(len(numpy.unique(labels_merged)),primerged,pri))
-                        BEST.append(primerged)
-                        save._savefig(labels_merged, image, path_figs+str(i+1)+"_"+filename[:-4]+"_MERGED.png") 
-                    else:
-                        BEST.append(pri)
+                    MERGED.append(primerged)
+                    #helper._savefig(labels, image, path_figs+str(i+1)+"_"+filename[:-4]+".png") 
+                    helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_MERGED.png") 
+                    #else:
+                    #    BEST.append(pri)
                 else:
-                    BEST.append(pri)
+                    MERGED.append(pri)
                 #else:
                     #BEST.append(probabilistic_rand_index(gt_segmentation,labels))
-    print("MEAN BEST",mean(BEST))
+    print("MEAN MERGED",mean(MERGED))
+    print("MEAN NORMAL",mean(NORMAL))
+    print("MEAN RENUM",mean(RENUM))
                

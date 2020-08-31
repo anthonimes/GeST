@@ -2,7 +2,7 @@ import numpy
 from statistics import mean,stdev
 from utils.parse_matlab import get_groundtruth, get_BSR
 from os import walk, environ
-import argparse
+import argparse, pickle
 from utils.metrics.pri import probabilistic_rand_index, rand_index_score, f_measure
 from skimage.metrics import adapted_rand_error
 
@@ -57,39 +57,60 @@ if __name__=="__main__":
     path_images = argsy['path']+"/images/"+folder
     path_BSR = path_BSR+"val_labels/"
     path_groundtruths = path_groundtruth+folder
+    best = True if argsy['best'] == "True" else False
 
     if method == "SLIC":
-        path_pickles = "results/pickles/"+method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_labels = "results/labels/"+method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_embeddings = "results/embeddings/"+method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_clusterings = "results/clusterings/"+method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
-        name = method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)
+        common=method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
+        path_graphs = "results/graphs/"+common
+        path_pickles = "results/pickles/"+common
+        path_labels = "results/labels/"+common
+        path_scores = "results/scores/"+common
+        path_figs = "results/figs/"+common
+        path_presegs = "results/presegs/"+common
+        path_embeddings = "results/embeddings/"+common
+        path_clusterings = "results/clusterings/"+common
+        path_matlab = "results/matlab/"+common
     else:
-        path_pickles = "results/pickles/"+method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_labels = "results/labels/"+method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_embeddings = "results/embeddings/"+method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
-        path_clusterings = "results/clusterings/"+method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
-        name = method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)
+        common=method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
+        path_graphs = "results/graphs/"+common
+        path_pickles = "results/pickles/"+common
+        path_labels = "results/labels/"+common
+        path_scores = "results/scores/"+common
+        path_figs = "results/figs/"+common
+        path_presegs = "results/presegs/"+common
+        path_embeddings = "results/embeddings/"+common
+        path_clusterings = "results/clusterings/"+common
+        path_matlab = "results/matlab/"+common
 
-    # computing best clustering ?
-    argsy['best'] = True if argsy['best'] == "True" else False
-    if argsy['best'] is True:
+    if argsy['best'] == "True":
+        path_graphs+="best/"
         path_pickles+="best/"
         path_labels+="best/"
+        path_figs+="best/"
+        path_presegs+="best/"
         path_embeddings+="best/"
         path_clusterings+="best/"
+        path_matlab+="best/"
 
-    PRI, SEGMENTS, MEAN_PRI, FMEASURE, MEAN_FMEASURE = [], [], [], [], []
+    PRI_BSD, PRI_GEST, FMEASURE_GEST, FMEASURE_BSD = [], [], [], []
     # load the image and convert it to a floating point data type
     for (dirpath, dirnames, filenames) in walk(path_images):
         for i,filename in enumerate(sorted(filenames)):
             if filename.endswith(".jpg"):
                 gt_boundaries, gt_segmentation = get_groundtruth(path_groundtruths+filename[:-4]+".mat")
-                print("{}: {}".format(i+1,filename[:-4]),end=' ')
-                gt_BSR = get_BSR(path_BSR+filename[:-4]+".mat")
-                pri =_best_worst_groundtruth_PRI(gt_segmentation,gt_BSR)
-                fm =_best_worst_groundtruth_FMEASURE(gt_segmentation,gt_BSR)
+                print("BSD {}: {}".format(i+1,filename[:-4]),end=' ')
+                gt_BSD = get_BSR(path_BSR+filename[:-4]+".mat")
+                pri =_best_worst_groundtruth_PRI(gt_segmentation,gt_BSD)
+                fm =_best_worst_groundtruth_FMEASURE(gt_segmentation,gt_BSD)
                 print(pri,fm)
-                PRI.append(pri)
-                FMEASURE.append(fm)
-    print("MEAN PRI, MEAN FMEASURE\t {} {}".format(mean(PRI),mean(FMEASURE)))
+                PRI_BSD.append(pri)
+                FMEASURE_BSD.append(fm)
+                gt_GEST = pickle.load(open(path_labels+str(i+1)+"_"+filename[:-4]+".seg","rb"))
+                pri =_best_worst_groundtruth_PRI(gt_segmentation,gt_GEST)
+                fm =_best_worst_groundtruth_FMEASURE(gt_segmentation,gt_GEST)
+                print("GEST {}: {}".format(i+1,filename[:-4]),end=' ')
+                print(pri,fm)
+                PRI_GEST.append(pri)
+                FMEASURE_GEST.append(fm)
+    print("MEAN PRI BSD, MEAN FMEASURE BSD\t {} {}".format(mean(PRI_BSD),mean(FMEASURE_BSD)))
+    print("MEAN PRI GEST, MEAN FMEASURE GEST\t {} {}".format(mean(PRI_GEST),mean(FMEASURE_GEST)))

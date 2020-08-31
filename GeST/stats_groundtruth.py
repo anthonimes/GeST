@@ -1,9 +1,7 @@
 import numpy
 from statistics import mean,stdev
-from utils.parse_matlab import get_groundtruth
 from os import walk, environ
-import argparse
-from utils.metrics.pri import probabilistic_rand_index, rand_index_score, f_measure
+import argparse, helper
 from skimage.metrics import adapted_rand_error
 
 
@@ -14,7 +12,7 @@ def _best_worst_groundtruth_FMEASURE(GT):
     for i,j in positions:
         # we compure the ARI between every pair of path_groundtruths
         #ri = rand_index_score(GT[i].flatten().tolist(),GT[j].flatten().tolist())
-        fmeasure = f_measure(GT[i].flatten().tolist(),GT[j].flatten().tolist())
+        fmeasure = helper._f_measure(GT[i].flatten().tolist(),GT[j].flatten().tolist())
         matrice[i,j]=fmeasure
     # the best groundtruth is the one maximizing sum(row) or sum(column) --- i.e. best PRI
     # the worst groundtruth is the one minimizing sum(row) or sum(column) --- i.e. worst PRI
@@ -29,7 +27,7 @@ def _best_worst_groundtruth_PRI(GT):
     positions = [(i,j) for i in range(len(GT)) for j in range(len(GT)) if i != j]
     for i,j in positions:
         # we compure the ARI between every pair of path_groundtruths
-        ri = rand_index_score(GT[i].flatten().tolist(),GT[j].flatten().tolist())
+        ri = helper._rand_index_score(GT[i].flatten().tolist(),GT[j].flatten().tolist())
         matrice[i,j]=ri
     # the best groundtruth is the one maximizing sum(row) or sum(column) --- i.e. best PRI
     # the worst groundtruth is the one minimizing sum(row) or sum(column) --- i.e. worst PRI
@@ -137,7 +135,7 @@ if __name__=="__main__":
         for i,filename in enumerate(sorted(filenames)):
             if filename.endswith(".jpg"):
                 print("{}: {}".format(i+1,filename[:-4]))
-                gt_boundaries, gt_segmentation = get_groundtruth(path_groundtruths+filename[:-4]+".mat")
+                gt_boundaries, gt_segmentation = helper._get_groundtruth(path_groundtruths+filename[:-4]+".mat")
                 mean_segments,best_PRI, mean_PRI =_stats_PRI(gt_segmentation)
                 best_FMEASURE, mean_FMEASURE =_stats_FMEASURE(gt_segmentation)
                 FMEASURE.append(best_FMEASURE)
