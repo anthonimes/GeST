@@ -145,10 +145,10 @@ if __name__ == "__main__":
     path_impossible = argsy['path']+"/images/from_observation"
     dirpath, dirnames, hardimages = list(walk(path_impossible))[0]
 
-    BEST_GEST_PRI, GEST_PRI, EMB_PRI, FV_PRI, VOI, MIS = [], [], [], [], [], []
     EMB, FV, GEST = [], [], []
     for (dirpath, dirnames, filenames) in walk(path_images):
         for _ in range(10):
+            BEST_GEST_PRI, GEST_PRI, EMB_PRI, FV_PRI, VOI, MIS = [], [], [], [], [], []
             for i,filename in enumerate(sorted(filenames)):
                 if filename.endswith(".jpg"):
                     # load the image and convert it to a floating point data type
