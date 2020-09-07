@@ -16,4 +16,5 @@ import pandas as pd
 df = pd.read_csv(sys.argv[1]).drop("image",axis=1)
 dfcols=df[["3","8","12","19","24"]]
 print(dfcols.mean())
+print(dfcols,dfcols.max(axis=1))
 print(mean(dfcols.max(axis=1)))

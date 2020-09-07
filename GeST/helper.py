@@ -25,6 +25,7 @@ def _parse_args():
     ap.add_argument("-p", "--path", required = False, help = "Path to folder")
     ap.add_argument("-m", "--method", required = True, help="pre-segmentation method")
     ap.add_argument("-b", "--best", required = False, help="compute best clustering?", default=False)
+    ap.add_argument("-n", "--nclusters", required = False, help="number of clusters")
     ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default=False)
     ap.add_argument("-d", "--dataset", required = False, help="which of {train,val,test} to evaluate?", default="val")
     ap.add_argument("-r", "--read", required = False, help="which of {train,val,test} to evaluate?", default=False)
@@ -34,6 +35,7 @@ def _parse_args():
     ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
     ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
+    ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
     return vars(ap.parse_args())
 
 def _get_groundtruth(filepath):
