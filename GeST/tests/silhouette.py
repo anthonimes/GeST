@@ -25,6 +25,20 @@ warnings.filterwarnings("ignore")
 import pickle
 import helper
 
+def silhouette(points,kmax):
+    def SSE():
+        sse=[]
+        for k in range(2, kmax):
+            km = cl.AgglomerativeClustering(n_clusters=k,affinity='cosine',linkage='average',distance_threshold=None).fit(points)
+            labels_clustering = km.labels_
+            silhouette_avg=silhouette_score(points, labels_clustering, metric = 'cosine')
+            sse.append(silhouette_avg)
+        return sse
+        
+    scores = SSE()
+    best = scores.index(max(scores))+2
+    return best
+
 # FIXME: NEW ATTEMPT --- select best number of clusters according to 3 scores, and ouput mean
 def allthree(points,kmax):
     def scores():
@@ -44,7 +58,7 @@ def allthree(points,kmax):
     #best = int(mean([scores[0].index(max(scores[0]))+2,scores[1].index(max(scores[1]))+2,scores[2].index(min(scores[2]))+2]))
     return best
 
-def learn_embeddings(walks,dimensions=32,window_size=16,min_count=0,workers=4,iter=1):
+def learn_embeddings(walks,dimensions=32,window_size=5,min_count=0,workers=4,iter=1):
     '''
     Learn embeddings by optimizing the Skipgram objective using SGD.
     '''
@@ -56,7 +70,7 @@ if __name__ == "__main__":
     argsy = helper._parse_args()
 
     methods = { "slic": "SLIC", "msp": "MSP", "mso": "MSO" }
-    which_folder = {"val": "val/", "train": "train/", "test": "test/", "bug": "bug/", "hard_msp": "hard_msp/", "from_observation": "from_observation/", "for_article": "for_article/"}
+    which_folder = {"val": "val/", "train": "train/", "test": "test/", "bug": "bug/", "hard_msp": "hard_msp/", "from_observation": "from_observation/"}
     folder = which_folder[argsy['dataset']]
     method = methods[argsy['method']]
     
@@ -115,15 +129,17 @@ if __name__ == "__main__":
     dirpath,_,images = list(walk(path_images))[0]
 
     for _thr in range(10):
-        debut=time.time()
         PRIAT, VOIAT = [], []
         PRIFV, VOIFV = [], []
         PRINV, VOINV = [], []
         for i,filename in enumerate(sorted(images)):
             # load the image and convert it to a floating point data type
+            debut=time.time()
             image = io.imread(dirpath+filename)
             image = img_as_float(image)
             image_lab = (color.rgb2lab(image) + [0,128,128]) #// [1,1,1]
+            end=time.time()
+            #print("image loaded in {} seconds".format(end-debut))
 
             # loop over the number of segments
             gt_boundaries, gt_segmentation = helper._get_groundtruth(path_groundtruths+filename[:-4]+".mat")
@@ -138,16 +154,18 @@ if __name__ == "__main__":
             
             # pretty good with .5 2 80 10
             # computing embeddings with Node2vec framework
-            # NOTE: PARAMETRES RAPIDES ! ESSAYER AVEC NCLUSTERS = 21
-            Gn2v = node2vec.Graph(Gr, False, 2, .5)
+            debut=time.time()
+            Gn2v = node2vec.Graph(Gr, False, 8, .1)
             Gn2v.preprocess_transition_probs()
-            # 80---20 PRETTY GOOD
-            walks = Gn2v.simulate_walks(20, 20)
-            model=learn_embeddings(walks,dimensions=16,window_size=16)
+            walks = Gn2v.simulate_walks(80, 10)
+            model=learn_embeddings(walks,dimensions=16)
+            end=time.time()
+            #print("embeddings computed in {} seconds".format(end-debut))
             
             # getting the embeddings
             representation = model.wv
-            gestemb = [representation.get_vector(str(node)).tolist() for node in Gr.nodes()]
+            embn2v = [representation.get_vector(str(node)).tolist() for node in Gr.nodes()]
+            gestemb = [ l.copy() for l in embn2v ]
                 
             #gestemb = []
             #for l,node in enumerate(Gr.nodes()):
@@ -161,27 +179,35 @@ if __name__ == "__main__":
             # scaling features
             scaler = StandardScaler()
             datagest = scaler.fit_transform(gestemb)
+            datafv = scaler.fit_transform(feature_vector)
+            datan2v = scaler.fit_transform(embn2v)
                 
+            debut = time.time()
             segmentation = numpy.zeros(labels.shape,dtype=int)
         
             # silhouette method to detect best number of clusters
             if(silh):
-                selected_k = allthree(datagest,min(25,number_regions))
+                selected_k = silhouette(datagest,min(25,number_regions))
+                selected_k_at = allthree(datagest,min(25,number_regions))
                 #print(selected_k, selected_k_at)
             else:
                 selected_k = min(n_cluster,number_regions)
             
-            clustering = cl.AgglomerativeClustering(n_clusters=selected_k,affinity='cosine',linkage='average',distance_threshold=None).fit(datagest)
+            clustering = cl.AgglomerativeClustering(n_clusters=selected_k_at,affinity='cosine',linkage='average',distance_threshold=None).fit(datagest)
             labels_clustering = clustering.labels_
             # building flat segmentation and then reshaping
             segmentation=numpy.asarray([labels_clustering[value-1]+1 for line in labels for value in line]).reshape(labels.shape)
             #for l,line in enumerate(labels):
             #    for j,value in enumerate(line):
             #        segmentation[l][j] = labels_clustering[value-1]+1
+            end = time.time()
+            #print("clustering done in {} seconds".format(end-debut))
             
+            debut = time.time()
             pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
             tmpvoi = [sum(variation_of_information(gt_segmentation[l].flatten(),segmentation.flatten())) for l in range(len(gt_segmentation))]
             end = time.time()
+            #print("metrics computed in {} seconds".format(end-debut))
             
             #print(filename,pri,end=' ')
             # merging hard images with empirical thresholds
@@ -199,6 +225,88 @@ if __name__ == "__main__":
             #print(pri,mean(tmpvoi))
             PRIAT.append(pri)
             VOIAT.append(mean(tmpvoi))
+            
+            # silhouette method to detect best number of clusters
+            if(silh):
+                selected_k = silhouette(datafv,min(25,number_regions))
+                selected_k_at = allthree(datafv,min(25,number_regions))
+                #print(selected_k, selected_k_at)
+            else:
+                selected_k = min(n_cluster,number_regions)
+            
+            clustering = cl.AgglomerativeClustering(n_clusters=selected_k_at,affinity='cosine',linkage='average',distance_threshold=None).fit(datafv)
+            labels_clustering = clustering.labels_
+            # building flat segmentation and then reshaping
+            segmentation=numpy.asarray([labels_clustering[value-1]+1 for line in labels for value in line]).reshape(labels.shape)
+            #for l,line in enumerate(labels):
+            #    for j,value in enumerate(line):
+            #        segmentation[l][j] = labels_clustering[value-1]+1
+            end = time.time()
+            #print("clustering done in {} seconds".format(end-debut))
+            
+            debut = time.time()
+            pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+            tmpvoi = [sum(variation_of_information(gt_segmentation[l].flatten(),segmentation.flatten())) for l in range(len(gt_segmentation))]
+            end = time.time()
+            #print("metrics computed in {} seconds".format(end-debut))
+            
+            #print(filename,pri,end=' ')
+            # merging hard images with empirical thresholds
+            if(filename in hardimages):
+                #helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+"_NOT_MERGED.png")
+                segmentation,has_merged=helper._merge(segmentation,image_lab,thr_pixels=250,thr=0.998,sigma=_sigma)
+                
+                #segmentation,has_merged=helper._merge_cosine(segmentation,image_lab,thr=0.998,sigma=_sigma)
+                #segmentation,has_merged=helper._merge_pixels(segmentation,image_lab,thr_pixels=300,sigma=_sigma)
+                        
+                pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+                #helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+"_"+str(numpy.amax(segmentation))+".png")
+                tmpvoi = [sum(variation_of_information(gt_segmentation[l],segmentation)) for l in range(len(gt_segmentation))]
+            
+            #print(pri,mean(tmpvoi))
+            PRIFV.append(pri)
+            VOIFV.append(mean(tmpvoi))
+            
+            # silhouette method to detect best number of clusters
+            if(silh):
+                selected_k = silhouette(datan2v,min(25,number_regions))
+                selected_k_at = allthree(datan2v,min(25,number_regions))
+                #print(selected_k, selected_k_at)
+            else:
+                selected_k = min(n_cluster,number_regions)
+            
+            clustering = cl.AgglomerativeClustering(n_clusters=selected_k_at,affinity='cosine',linkage='average',distance_threshold=None).fit(datan2v)
+            labels_clustering = clustering.labels_
+            # building flat segmentation and then reshaping
+            segmentation=numpy.asarray([labels_clustering[value-1]+1 for line in labels for value in line]).reshape(labels.shape)
+            #for l,line in enumerate(labels):
+            #    for j,value in enumerate(line):
+            #        segmentation[l][j] = labels_clustering[value-1]+1
+            end = time.time()
+            #print("clustering done in {} seconds".format(end-debut))
+            
+            debut = time.time()
+            pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+            tmpvoi = [sum(variation_of_information(gt_segmentation[l].flatten(),segmentation.flatten())) for l in range(len(gt_segmentation))]
+            end = time.time()
+            #print("metrics computed in {} seconds".format(end-debut))
+            
+            #print(filename,pri,end=' ')
+            # merging hard images with empirical thresholds
+            if(filename in hardimages):
+                #helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+"_NOT_MERGED.png")
+                segmentation,has_merged=helper._merge(segmentation,image_lab,thr_pixels=250,thr=0.998,sigma=_sigma)
+                
+                #segmentation,has_merged=helper._merge_cosine(segmentation,image_lab,thr=0.998,sigma=_sigma)
+                #segmentation,has_merged=helper._merge_pixels(segmentation,image_lab,thr_pixels=300,sigma=_sigma)
+                        
+                pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+                #helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+"_"+str(numpy.amax(segmentation))+".png")
+                tmpvoi = [sum(variation_of_information(gt_segmentation[l],segmentation)) for l in range(len(gt_segmentation))]
+            
+            #print(pri,mean(tmpvoi))
+            PRINV.append(pri)
+            VOINV.append(mean(tmpvoi))
                     
             if(write): 
                 pickle.dump(labels,open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","wb"))
@@ -213,6 +321,11 @@ if __name__ == "__main__":
         GEST_VOI_AT.append(mean(VOIAT))
         GEST_PRI_AT.append(mean(PRIAT))
         print(GEST_PRI_AT, GEST_VOI_AT, max(GEST_PRI_AT),mean(GEST_PRI_AT),mean(GEST_VOI_AT))
-        end=time.time()
-        print("time elapsed on iteration {}: {}".format(_thr,end-debut))
                     
+        GEST_VOI_FV.append(mean(VOIFV))
+        GEST_PRI_FV.append(mean(PRIFV))
+        print(GEST_PRI_FV, GEST_VOI_FV, max(GEST_PRI_FV),mean(GEST_PRI_FV),mean(GEST_VOI_FV))
+                    
+        GEST_VOI_NV.append(mean(VOINV))
+        GEST_PRI_NV.append(mean(PRINV))
+        print(GEST_PRI_NV, GEST_VOI_NV, max(GEST_PRI_NV),mean(GEST_PRI_NV),mean(GEST_VOI_NV))

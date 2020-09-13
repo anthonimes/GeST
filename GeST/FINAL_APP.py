@@ -51,7 +51,7 @@ if __name__ == "__main__":
     argsy = helper._parse_args()
 
     methods = { "slic": "SLIC", "msp": "MSP", "mso": "MSO" }
-    which_folder = {"val": "val/", "train": "train/", "test": "test/", "bug": "bug/", "hard_msp": "hard_msp/", "from_observation": "from_observation/"}
+    which_folder = {"val": "val/", "train": "train/", "test": "test/", "bug": "bug/", "hard_msp": "hard_msp/", "from_observation": "from_observation/", "for_article": "for_article/"}
     folder = which_folder[argsy['dataset']]
     method = methods[argsy['method']]
     
@@ -75,6 +75,9 @@ if __name__ == "__main__":
         common=method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"+folder
     else:
         common=method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"+folder
+        
+    if(best):
+        common+="/best/"
       
     path_graphs = "results/graphs/"+common
     path_pickles = "results/pickles/"+common
@@ -99,12 +102,6 @@ if __name__ == "__main__":
     
     path_merge = argsy['path']+"/images/from_observation"
     dirpath, dirnames, hardimages = list(walk(path_merge))[0]
-    
-    if best:
-        NUM_CLUSTERS = [3,8,14,19,24]
-    else:
-        # NOTE: TRY WITH A HIGH NUMBER OF CLUSTERS+MERGE
-        NUM_CLUSTERS = [min(24,number_regions)]
 
     # will contain the final PRI and VOI results of every iteration
     GEST_PRI, GEST_VOI = [], []
@@ -130,11 +127,17 @@ if __name__ == "__main__":
                 Gr = graph.rag_mean_color(image_lab,labels,connectivity=2,mode='similarity',sigma=_sigma)
 
             number_regions = numpy.amax(labels)
+    
+            if best:
+                NUM_CLUSTERS = [2,8,15,21,30]
+            else:
+                # NOTE: TRY WITH A HIGH NUMBER OF CLUSTERS+MERGE
+                NUM_CLUSTERS = [min(24,number_regions)]
             
             # computing embeddings with Node2vec framework
-            Gn2v = node2vec.Graph(Gr, False, 8, .1)
+            Gn2v = node2vec.Graph(Gr, False, 2, .5)
             Gn2v.preprocess_transition_probs()
-            walks = Gn2v.simulate_walks(80, 10)
+            walks = Gn2v.simulate_walks(20, 20)
             model=learn_embeddings(walks,dimensions=16)
             
             # getting the embeddings
@@ -196,7 +199,7 @@ if __name__ == "__main__":
                     nx.write_gpickle(Gr, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
                     nx.write_weighted_edgelist(Gr, path_graphs+filename[:-4]+".wgt", delimiter='\t')
                     helper._savepreseg(labels, image, path_presegs+filename[:-4]+".png")
-                    helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+".png")
+                    helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
                 
         #print(stored_results)
         dfPRI = pd.DataFrame.from_dict(stored_PRI_results)
