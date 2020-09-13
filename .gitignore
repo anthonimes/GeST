@@ -146,3 +146,4 @@ GeST/csv
 GeST/scores
 GeST/SAVE
 algorithms/
+GeST/*.txt
