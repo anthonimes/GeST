@@ -36,6 +36,7 @@ def _parse_args():
     ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
     ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
+    ap.add_argument("--metrics", required = False, help="compute PRI and VI metrics (need groundtruth)")
     return vars(ap.parse_args())
 
 def _get_groundtruth(filepath):

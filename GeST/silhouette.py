@@ -56,8 +56,7 @@ if __name__ == "__main__":
     argsy = helper._parse_args()
 
     methods = { "slic": "SLIC", "msp": "MSP", "mso": "MSO" }
-    which_folder = {"val": "val/", "train": "train/", "test": "test/", "bug": "bug/", "hard_msp": "hard_msp/", "from_observation": "from_observation/", "for_article": "for_article/"}
-    folder = which_folder[argsy['dataset']]
+    folder = argsy['dataset']+"/"
     method = methods[argsy['method']]
     
     # construct the argument parser and parse the arguments
@@ -72,6 +71,7 @@ if __name__ == "__main__":
     write = True if argsy['write'] == "True" else False
     read = True if argsy['read'] == "True" else False
     silh = True if argsy['silhouette'] == "True" else False
+    metrics = True if argsy['metrics'] == "True" else False
     
     if(not(silh)):
         n_cluster = int(argsy['nclusters'])
@@ -106,12 +106,15 @@ if __name__ == "__main__":
     makedirs(path_matlab,exist_ok=True)
     
     path_merge = argsy['path']+"/images/from_observation/"
-    _, _, hardimages = list(walk(path_merge))[0]
+    #_, _, hardimages = list(walk(path_merge))[0]
+    # UGLY HACK: remove if merge needed
+    hardimages = []
 
     # will contain the final PRI and VOI results of every iteration
     GEST_PRI_AT, GEST_VOI_AT = [], []
     GEST_PRI_FV, GEST_VOI_FV = [], []
     GEST_PRI_NV, GEST_VOI_NV = [], []
+    print(path_images)
     dirpath,_,images = list(walk(path_images))[0]
 
     for _thr in range(10):
@@ -126,7 +129,13 @@ if __name__ == "__main__":
             image_lab = (color.rgb2lab(image) + [0,128,128]) #// [1,1,1]
 
             # loop over the number of segments
-            gt_boundaries, gt_segmentation = helper._get_groundtruth(path_groundtruths+filename[:-4]+".mat")
+            if(metrics):
+                if(argsy['path'].split("/")[-1] == "XP"):
+                    _, gt_segmentation = helper._get_groundtruth(path_groundtruths+filename[:-4]+".mat")
+                else:
+                    gt_segmentation=[io.imread(path_groundtruths+filename[:-4]+"_GT.bmp")]
+                    print(gt_segmentation)
+                                 
             if(read):
                 Gr = nx.read_gpickle(path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
                 labels = pickle.load(open(path_labels_msp+str(i+1)+"_"+filename[:-4]+".preseg","rb"))
@@ -179,8 +188,9 @@ if __name__ == "__main__":
             #    for j,value in enumerate(line):
             #        segmentation[l][j] = labels_clustering[value-1]+1
             
-            pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
-            tmpvoi = [sum(variation_of_information(gt_segmentation[l].flatten(),segmentation.flatten())) for l in range(len(gt_segmentation))]
+            if(metrics):
+                pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+                tmpvoi = [sum(variation_of_information(gt_segmentation[l].flatten(),segmentation.flatten())) for l in range(len(gt_segmentation))]
             end = time.time()
             
             #print(filename,pri,end=' ')
@@ -192,13 +202,15 @@ if __name__ == "__main__":
                 #segmentation,has_merged=helper._merge_cosine(segmentation,image_lab,thr=0.998,sigma=_sigma)
                 #segmentation,has_merged=helper._merge_pixels(segmentation,image_lab,thr_pixels=300,sigma=_sigma)
                         
-                pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
+                if(metrics):
+                    pri = helper._probabilistic_rand_index(gt_segmentation,segmentation)
                 #helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+"_"+str(numpy.amax(segmentation))+".png")
-                tmpvoi = [sum(variation_of_information(gt_segmentation[l],segmentation)) for l in range(len(gt_segmentation))]
+                    tmpvoi = [sum(variation_of_information(gt_segmentation[l],segmentation)) for l in range(len(gt_segmentation))]
             
             #print(pri,mean(tmpvoi))
-            PRIAT.append(pri)
-            VOIAT.append(mean(tmpvoi))
+            if(metrics):
+                PRIAT.append(pri)
+                VOIAT.append(mean(tmpvoi))
                     
             if(write): 
                 pickle.dump(labels,open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","wb"))
@@ -207,12 +219,13 @@ if __name__ == "__main__":
                 numpy.save(path_embeddings+filename[:-4]+".emb",gestemb)
                 nx.write_gpickle(Gr, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
                 nx.write_weighted_edgelist(Gr, path_graphs+filename[:-4]+".wgt", delimiter='\t')
-                #helper._savepreseg(labels, image, path_presegs+filename[:-4]+".png")
+                helper._savepreseg(labels, image, path_presegs+filename[:-4]+"_"+str(number_regions)+".png")
                 helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(selected_k)+".png")
                     
-        GEST_VOI_AT.append(mean(VOIAT))
-        GEST_PRI_AT.append(mean(PRIAT))
-        print(GEST_PRI_AT, GEST_VOI_AT, max(GEST_PRI_AT),mean(GEST_PRI_AT),mean(GEST_VOI_AT))
-        end=time.time()
-        print("time elapsed on iteration {}: {}".format(_thr,end-debut))
+        if(metrics):
+            GEST_VOI_AT.append(mean(VOIAT))
+            GEST_PRI_AT.append(mean(PRIAT))
+            print(GEST_PRI_AT, GEST_VOI_AT, max(GEST_PRI_AT),mean(GEST_PRI_AT),mean(GEST_VOI_AT))
+            end=time.time()
+            print("time elapsed on iteration {}: {}".format(_thr,end-debut))
                     
