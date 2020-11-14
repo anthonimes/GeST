@@ -20,19 +20,18 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 def _parse_args():    
+    # TODO: add argument for merge
     ap = argparse.ArgumentParser()
+    ap.add_argument("-m", "--method", required = True, help="pre-segmentation method")
+    ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
     ap.add_argument("-i", "--image", required = False, help = "Path to the image")
     ap.add_argument("-p", "--path", required = False, help = "Path to folder")
-    ap.add_argument("-m", "--method", required = True, help="pre-segmentation method")
-    ap.add_argument("-b", "--best", required = False, help="compute best clustering?", default=False)
     ap.add_argument("-n", "--nclusters", required = False, help="number of clusters")
     ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default=False)
-    ap.add_argument("-d", "--dataset", required = False, help="which of {train,val,test} to evaluate?", default="val")
     ap.add_argument("-r", "--read", required = False, help="which of {train,val,test} to evaluate?", default=False)
     ap.add_argument("--hs", required = False, help="spatial radius?", default=15)
     ap.add_argument("--hr", required = False, help="range radius?", default=4.5)
     ap.add_argument( "--mind", required = False, help="min density", default=300)
-    ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
     ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
     ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
@@ -121,29 +120,6 @@ def _color_features(labels,image_lab):
         mean_lab[i]=[mean(L_value),mean(a_value),mean(b_value)]
         stdev_lab[i]=[stdev(L_value),stdev(a_value),stdev(b_value)]
         feature_vector[i]=mean_lab[i]+stdev_lab[i]
-        
-    '''HOG=[0]*len(regions)
-    for i in range(len(regions)):
-        bbox=regions[i].bbox
-        segment=image_lab[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-        # FIXME; how the fuck can we obtain a same-dimension vector?
-        segment_resized=resize(segment,(64,128))
-        fd = hog(segment_resized, orientations=9, pixels_per_cell=(8, 8),
-                cells_per_block=(2, 2), visualize=False, multichannel=True, feature_vector=False)
-        # each bin represents the orientation: 0--20, 20--40, ..., 160--180
-        (a,b,c,d,_)=fd.shape
-        descriptor=[0]*9
-        for x in range(a):
-            for y in range(b):
-                for w in range(c):
-                    for z in range(d):
-                        for l in range(9):
-                            orientation=fd[x,y,w,z,l]*10
-                            descriptor[l]+=(orientation)
-
-        descriptor = [d/(a*b*c*d) for d in descriptor]
-        feature_vector.append(mean_lab[i]+stdev_lab[i])
-        feature_vector[i].extend(descriptor)'''
 
     return feature_vector
 
@@ -178,14 +154,6 @@ def _get_Lab_adjacency(labels,image_lab,sigma=50):
                 #gkS=exp(-((distS**2)/(2*(sigma**2))))
                 gk=exp(-((dist**2)/(sigma)))
                 #gkS=exp(-((distS**2)/(sigma)))
-                #Hi = HOG[i-1].flatten().tolist()
-                #Hj = HOG[j-1].flatten().tolist()
-                '''tog = cosine(Hi,Hj)
-                # NEED TO FIND THE RIGHT PARAMETER
-                try:
-                    sim = 0.2*(sqrt(gk*tog))+0.8*gk
-                except:
-                    sim=0'''
                 #sim=gk*gkS
                 sim=gk
                 adjacency[i][j] = sim
@@ -308,68 +276,7 @@ def _meanshift_py(path,_sr,_rr,_mind):
     (segmented_image, labels, number_regions) = pms.segment(ms_image, spatial_radius=_sr, range_radius=_rr, min_density=_mind)
     return 1+labels
 
-def _merge_pixels(labels,image_lab,thr_pixels=300,sigma=5):
-    # NOTE; labels must be a matrix-like image
-    labels_merge = numpy.copy(labels)
-    merged=True
-    has_merged=False
-    # initial computation, will be maintained during algorithm
-    feature_vector = normalize(numpy.asarray(_color_features(labels,image_lab)))
-    tomerge = numpy.unique(labels)
-        
-    for t in tomerge:
-        Ri = t
-        # how many pixels have this label?
-        lenRi = len(numpy.where(labels_merge.flatten()==Ri)[0])
-        if(lenRi > 0 and lenRi < thr_pixels):
-            closest = max([(Rj,1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])) for Rj in tomerge if Ri!=Rj],key=lambda x: x[1])[0]
-            Rj = closest
-            sim=1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])
-            #if(sim>=0.996):
-            max_label = Ri if Ri > Rj else Rj
-            min_label = Ri if Ri < Rj else Rj
-            # updating remaining labels
-            labels_merge[numpy.where(labels_merge==max_label)] = min_label
-            #clusters_merge[numpy.where(clusters_merge==max_label-1)] = min_label-1
-            has_merged=True
-            feature_vector[min_label-1] = (feature_vector[min_label-1]+feature_vector[max_label-1])/2
-
-    if(has_merged):
-        _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-        labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged
-
-# FIXME: try again to merge ALL images with small pixels, just to see improvements
-def _merge_cosine(labels,image_lab,thr=0.999,sigma=5):
-    # NOTE; labels must be a matrix-like image
-    labels_merge = numpy.copy(labels)
-    merged=True
-    has_merged=False
-    # initial computation, will be maintained during algorithm
-    feature_vector = numpy.asarray(_color_features(labels,image_lab))
-    G = graph.rag_mean_color(image_lab,labels,connectivity=2,mode='similarity',sigma=sigma)
-        
-    for u,v in G.edges():
-        Ri = u
-        Rj = v
-        # is the closest region close enough?
-        sim=1-distance.cosine(feature_vector[Ri-1],feature_vector[Rj-1])
-        #sim=G[Ri][Rj]['weight']
-        if(sim>=thr):
-            max_label = Ri if Ri > Rj else Rj
-            min_label = Ri if Ri < Rj else Rj
-            # updating remaining labels
-            labels_merge[numpy.where(labels_merge==max_label)] = min_label
-            #clusters_merge[numpy.where(clusters_merge==max_label-1)] = min_label-1
-            has_merged=True
-            feature_vector[min_label-1] = (feature_vector[min_label-1]+feature_vector[max_label-1])/2
-            #G = nx.contracted_nodes(G,min_label,max_label,self_loops=False)
-    
-    if(has_merged):
-        _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-        labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged
-
+# TODO: make sure this coincides with final version of article
 def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     # NOTE; labels must be a matrix-like imaeg
     labels_merge = numpy.copy(labels)
@@ -430,11 +337,7 @@ def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
                     labels_merge[(x,y)] = min_label.label
                 merged=True
                 has_merged=True
-                # updating remaining labels
-                #_, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-                #labels_merge=(1+labels_merge).reshape(labels.shape)
                 # updating feature vector
-                #print("PIXE",(feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2)
                 feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
                 G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
             if(merged):
@@ -445,3 +348,26 @@ def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
     labels_merge=(1+labels_merge).reshape(labels.shape)
     return labels_merge,has_merged
+
+def silhouette(points,kmax):
+    def SSE():
+        sse=[]
+        for k in range(2, kmax):
+            km = cl.AgglomerativeClustering(n_clusters=k,affinity='cosine',linkage='average',distance_threshold=None).fit(points)
+            labels_clustering = km.labels_
+            silhouette_avg=silhouette_score(points, labels_clustering, metric = 'cosine')
+            sse.append(silhouette_avg)
+        return sse
+        
+    scores = SSE()
+    best = scores.index(max(scores))+2
+    return best
+
+def learn_embeddings(walks,dimensions=32,window_size=5,min_count=0,workers=4,iter=1):
+    '''
+    Learn embeddings by optimizing the Skipgram objective using SGD.
+    '''
+    walks = [list(map(str, walk)) for walk in walks]
+    model = Word2Vec(walks, size=dimensions, window=window_size, min_count=min_count, sg=1, workers=workers, iter=iter)
+    return model
+
