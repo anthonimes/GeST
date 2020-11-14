@@ -16,9 +16,6 @@
 [submodule "GeST/utils/smore"]
 	path = GeST/utils/smore
 	url = https://github.com/cnclabs/smore
-[submodule "GeST/utils/pyFmax"]
-	path = GeST/utils/pyFmax
-	url = https://github.com/nicolasdugue/pyFmax
 [submodule "GeST/utils/extended-berkeley-segmentation-benchmark"]
 	path = GeST/utils/extended-berkeley-segmentation-benchmark
 	url = https://github.com/davidstutz/extended-berkeley-segmentation-benchmark.git
