@@ -5,12 +5,15 @@ from skimage.future import graph
 from scipy.io import loadmat, savemat
 from scipy.special import comb
 from scipy.spatial import distance
-from sklearn.preprocessing import normalize
 
+from sklearn.metrics import normalized_mutual_info_score, silhouette_score
+
+from sklearn import cluster as cl
 from statistics import mean, stdev
 from math import exp, log, ceil
 
 from os import walk
+from gensim.models import Word2Vec
 
 # https://github.com/fjean/pymeanshift
 import pymeanshift as pms
@@ -22,19 +25,20 @@ import networkx as nx
 def _parse_args():    
     # TODO: add argument for merge
     ap = argparse.ArgumentParser()
+    images = ap.add_mutually_exclusive_group(required=True)
+    images.add_argument("-i", "--image", help = "Path to the image")
+    images.add_argument("-p", "--path", help = "Path to folder")
     ap.add_argument("-m", "--method", required = True, help="pre-segmentation method")
     ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
-    ap.add_argument("-i", "--image", required = False, help = "Path to the image")
-    ap.add_argument("-p", "--path", required = False, help = "Path to folder")
-    ap.add_argument("-n", "--nclusters", required = False, help="number of clusters")
+    clusters = ap.add_mutually_exclusive_group(required=True)
+    clusters.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
+    clusters.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
     ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default=False)
-    ap.add_argument("-r", "--read", required = False, help="which of {train,val,test} to evaluate?", default=False)
-    ap.add_argument("--hs", required = False, help="spatial radius?", default=15)
+    ap.add_argument("--hs", required = False, help="spatial radius?", default=7)
     ap.add_argument("--hr", required = False, help="range radius?", default=4.5)
-    ap.add_argument( "--mind", required = False, help="min density", default=300)
+    ap.add_argument( "--mind", required = False, help="min density", default=50)
     ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
-    ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
     ap.add_argument("--metrics", required = False, help="compute PRI and VI metrics (need groundtruth)")
     return vars(ap.parse_args())
 
@@ -371,3 +375,11 @@ def learn_embeddings(walks,dimensions=32,window_size=5,min_count=0,workers=4,ite
     model = Word2Vec(walks, size=dimensions, window=window_size, min_count=min_count, sg=1, workers=workers, iter=iter)
     return model
 
+def GeST(embeddings, labels, n_cluster):
+    # using agglomerative clustering to obtain segmentation 
+    clustering = cl.AgglomerativeClustering(n_clusters=n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(embeddings)
+    labels_clustering = clustering.labels_
+    # building flat segmentation and then reshaping
+    segmentation=numpy.asarray([labels_clustering[value-1]+1 for line in labels for value in line]).reshape(labels.shape)
+
+    return labels_clustering, segmentation

@@ -140,11 +140,4 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-dataset/
-GeST/results
-GeST/csv
-GeST/scores
-GeST/SAVE
-algorithms/
-GeST/*.txt
-GeST/csv
+results/
