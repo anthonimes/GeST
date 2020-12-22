@@ -1,18 +1,18 @@
-from skimage import data,io,color,filters,measure,util,img_as_ubyte
+from skimage import io,color,measure,img_as_ubyte
 from skimage.segmentation import mark_boundaries
 from skimage.future import graph
 
-from scipy.io import loadmat, savemat
+from scipy.io import savemat
 from scipy.special import comb
 from scipy.spatial import distance
 
-from sklearn.metrics import normalized_mutual_info_score, silhouette_score
-
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import normalize
 from sklearn import cluster as cl
-from statistics import mean, stdev
-from math import exp, log, ceil
 
-from os import walk
+from statistics import mean, stdev
+from math import exp, ceil
+
 from gensim.models import Word2Vec
 
 # https://github.com/fjean/pymeanshift
@@ -28,33 +28,21 @@ def _parse_args():
     images = ap.add_mutually_exclusive_group(required=True)
     images.add_argument("-i", "--image", help = "Path to the image")
     images.add_argument("-p", "--path", help = "Path to folder")
-    ap.add_argument("-m", "--method", required = True, help="pre-segmentation method")
+    ap.add_argument("-m", "--method", required = False, default="msp", help="pre-segmentation method")
     ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
     clusters = ap.add_mutually_exclusive_group(required=True)
     clusters.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
     clusters.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
-    ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default=False)
+    ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default="False")
     ap.add_argument("--hs", required = False, help="spatial radius?", default=7)
     ap.add_argument("--hr", required = False, help="range radius?", default=4.5)
     ap.add_argument( "--mind", required = False, help="min density", default=50)
     ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
     ap.add_argument("--metrics", required = False, help="compute PRI and VI metrics (need groundtruth)")
+    ap.add_argument("--merge", required = False, default="False", help="apply merging procedure")
     return vars(ap.parse_args())
 
-def _get_groundtruth(filepath):
-    groundtruth = loadmat(filepath)
-    boundaries = []
-    segmentation = []
-    for i in range(len(groundtruth['groundTruth'][0])):
-        # groundtruths boundaries and segmentation as numpy arrays
-        boundaries.append(groundtruth['groundTruth'][0][i][0]['Boundaries'][0])
-        segmentation.append(groundtruth['groundTruth'][0][i][0]['Segmentation'][0])
-    return boundaries, segmentation
-
-def _get_BSR(filepath):
-    BSR = loadmat(filepath)
-    return BSR['seg']
 
 def _savemat(filepath,segmentation):
     savemat(filepath,{"segs": segmentation},appendmat=False)
@@ -70,9 +58,6 @@ def _colors(segmentation,image):
     for index,region in enumerate(regions):
         # getting coordinates of region
         coords = region.coords
-        #cy, cx = region.centroid
-        #plt.plot(cx, cy, 'ro')
-        #plt.show()
         R_value, G_value, B_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
         for p,(x,y) in enumerate(coords):
             R,G,B=image[(x,y)]
@@ -84,18 +69,12 @@ def _colors(segmentation,image):
 
 def _savepreseg(segmentation=None,image=None,path=None,name=None):
     io.imsave(path,img_as_ubyte(mark_boundaries(image,segmentation, mode='thick')))
-    #plt.axis("off")
-    #plt.savefig(path,bbox_inches='tight',pad_inches=0)'''
 
 def _savefig(segmentation=None,image=None,path=None,name=None):
-    #fig = plt.figure(name)#figsize=(image.shape[1]/80,image.shape[0]/80),dpi=80)
-    #if(colored):
     colored_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors(segmentation,image), bg_label=0)
     io.imsave(path,img_as_ubyte(mark_boundaries(colored_regions, segmentation, mode='thick')))
     colored_by_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors_by_region(numpy.amax(segmentation)), bg_label=0)
     io.imsave(path[:-4]+"_COLORMAP"+path[-4:],img_as_ubyte(mark_boundaries(colored_by_regions, segmentation, mode='thick')))
-    #plt.axis("off")
-    #plt.savefig(path,bbox_inches='tight',pad_inches=0)'''
 
 def _loadlabels(filename):
     labels = []
@@ -148,6 +127,7 @@ def _get_Lab_adjacency(labels,image_lab,sigma=50):
         feature_vector=[]
         for i in range(1,len(adjacency)):
             for j in range(i+1,len(adjacency)):
+                # NOTE: check
                 Li=mean_lab[i-1]#+stdev_lab[i-1]
                 Lj = mean_lab[j-1]#+stdev_lab[j-1]
                 Si=stdev_lab[i-1]
@@ -162,118 +142,8 @@ def _get_Lab_adjacency(labels,image_lab,sigma=50):
                 sim=gk
                 adjacency[i][j] = sim
                 adjacency[j][i] = sim
-        #where_are_NaNs = numpy.isnan(adjacency)
-        #adjacency[where_are_NaNs] = 0
             
         return adjacency
-
-def _distance_zero_graph(G,image=None,labels=None,threshold=15,sigma=50):
-    adjacency = _get_Lab_adjacency(labels,image,sigma)
-    Gr = nx.Graph(G)
-    # removing edges below threshold
-    maxdelta=0
-    pairs=0
-    edges = set()
-    #print("starting from graph with {} vertices and {} edges".format(len(G),len(G.edges())))
-    for u,v in Gr.edges():
-        sim=adjacency[u][v]
-        if(sim>=threshold): 
-            Gr[u][v]['weight']=sim
-        # commented to ensure connectivity
-    
-    # normalizing
-#    maxsim=max(edges, key=lambda x: x[2])[2]
-#    edges=[(e[0],e[1],maxsim-e[2]) for e in edges]
-    Gr.add_weighted_edges_from(edges)
-    return Gr
-
-def _distance_r_graph(G,R,image=None,labels=None,threshold=15,sigma=50):
-    adjacency = _get_Lab_adjacency(labels,image,sigma)
-    Gr = nx.Graph(G)
-    # removing edges below threshold
-    maxdelta=0
-    pairs=0
-    edges = set()
-    #print("starting from graph with {} vertices and {} edges".format(len(G),len(G.edges())))
-    for u,v in Gr.edges():
-        sim=adjacency[u][v]
-        if(sim>=threshold): 
-            Gr[u][v]['weight']=sim
-        # commented to ensure connectivity
-        else:
-            Gr.remove_edge(u,v)
-    if(R>0):
-        for u in G.nodes():
-            # we get its distance-R induced subgraph
-            Ir = nx.single_source_shortest_path_length(G ,source=u, cutoff=R)
-            # we then add an edge between u and every vertex in Ir, with proper weight
-            for v in Ir.keys():
-                if(u != v):
-                    sim=adjacency[u][v]
-                    if(sim>=threshold):
-                        # a simple try: ponderate by distance (if similar but far apart, well...)
-                        edges.add((u,v,sim))
-                    # removing useless edges --- UGLY NEED TO BE FIXED
-                    # commented to ensure connectivity
-                    elif Gr.has_edge(u,v):
-                        Gr.remove_edge(u,v)
-
-    # normalizing
-#    maxsim=max(edges, key=lambda x: x[2])[2]
-#    edges=[(e[0],e[1],maxsim-e[2]) for e in edges]
-    Gr.add_weighted_edges_from(edges)
-    return Gr
-
-def _f_measure(labels_ground_truth, labels_prediction):
-    # tp = true positive, tn: true negative, fp: false positive, fn: false negative
-    # number of pairs in the same set in ground truth
-    sum_tp_fp = comb(numpy.bincount(labels_ground_truth), 2).sum()
-    # number of pairs in the same set in prediction
-    sum_tp_fn = comb(numpy.bincount(labels_prediction), 2).sum()
-    # concatenating the results
-    A = numpy.c_[(labels_ground_truth, labels_prediction)]
-    tp = sum(comb(numpy.bincount(A[A[:, 0] == i, 1]), 2).sum() for i in set(labels_ground_truth))
-    fp = sum_tp_fp - tp
-    fn = sum_tp_fn - tp
-    tn = comb(len(A), 2) - tp - fp - fn
-    return tp/(tp+(fp+fn)/2)
-
-# np.bincount: this function is used to number of passing numbers was found.
-# comb: combination example (6 2) = 15, (10, 2) = 45
-# np_c: concanatenation operation.
-# tp: every time a pair of elements is grouped together by the two cluster
-# tn: every time a pair of elements is not grouped together by the two cluster
-"""
-    This function is used for calculate rand index (RI) score
-    @param labels_ground_truth: actual label values
-    @param labels_prediction: predicted label values
-"""
-def _rand_index_score(labels_ground_truth, labels_prediction):
-    # tp = true positive, tn: true negative, fp: false positive, fn: false negative
-    # number of pairs in the same set in ground truth
-    sum_tp_fp = comb(numpy.bincount(labels_ground_truth), 2).sum()
-    # number of pairs in the same set in prediction
-    sum_tp_fn = comb(numpy.bincount(labels_prediction), 2).sum()
-    # concatenating the results
-    A = numpy.c_[(labels_ground_truth, labels_prediction)]
-    tp = sum(comb(numpy.bincount(A[A[:, 0] == i, 1]), 2).sum() for i in set(labels_ground_truth))
-    fp = sum_tp_fp - tp
-    fn = sum_tp_fn - tp
-    tn = comb(len(A), 2) - tp - fp - fn
-    return (tp + tn) / (tp + fp + fn + tn)
-"""
-    This function is used to applyied probabilistic rand index evaluation metric.
-    @param image_name: image name
-    @param prediction: slic and region merge algoritms result
-    @param score / number_of_ground_truth: PRI result for related image
-"""
-def _probabilistic_rand_index(groundtruth, prediction):
-    score = 0
-    number_of_ground_truth = len(groundtruth)
-    for i in range(number_of_ground_truth):
-        segmentation = groundtruth[i].flatten().tolist()
-        score += _rand_index_score(segmentation, prediction.flatten().tolist())
-    return score / number_of_ground_truth            
 
 def _meanshift_py(path,_sr,_rr,_mind):
     ms_image = cv2.imread(path)
@@ -311,13 +181,8 @@ def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
                     labels_merge[(x,y)] = min_label.label
                 merged=True
                 has_merged=True
-                # updating remaining labels
-                #_, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-                #labels_merge=(1+labels_merge).reshape(labels.shape)
-                # updating feature vector
                 feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
                 G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
-                #print("COSI",(feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2)
             if(merged):
                 break
         if(merged):

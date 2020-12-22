@@ -2,12 +2,9 @@
 from skimage.util import img_as_float
 from skimage.future import graph
 from skimage import io, color
-from skimage.metrics import variation_of_information
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import normalize
-
-from statistics import mean, stdev
 
 from utils.node2vec.src import node2vec
 
@@ -15,57 +12,46 @@ from os import walk, makedirs
 
 import networkx as nx
 import numpy
-import warnings, sys, argparse
+import warnings
 warnings.filterwarnings("ignore")
 
 import pickle
 import helper
-import pandas as pd
+#import pandas as pd
 
 if __name__ == "__main__":
+    
+    # construct the argument parser and parse the arguments
     argsy = helper._parse_args()
 
     methods = { "slic": "SLIC", "msp": "MSP", "mso": "MSO" }
     method = methods[argsy['method']]
-    
-    # construct the argument parser and parse the arguments
 
-    # meanshift and SLIC arguments
-    _spatial_radius=int(argsy['hs']) #hs
-    _range_radius=float(argsy['hr']) #hr
-    _min_density=int(argsy['mind']) #mind
+    # common arguments
     _sigma=float(argsy['sigma'])
 
     # computing best clustering ?
     write = True if argsy['write'] == "True" else False
     silh = True if argsy['silhouette'] == "True" else False
+    merge = True if argsy['merge'] == "True" else False
    
     # TODO: allow for a single image or for path
     path_images = argsy['path']
     
+    # meanshift and SLIC arguments
     if method == "SLIC":
+        _num_segments = float(argsy['segments'])
+        _compactness = float(argsy['compactness'])
         common=method+"_"+str(_num_segments)+"_"+str(_compactness)+"_SIGMA_"+str(_sigma)+"/"
     else:
+        _spatial_radius=int(argsy['hs']) #hs
+        _range_radius=float(argsy['hr']) #hr
+        _min_density=int(argsy['mind']) #mind
         common=method+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(_sigma)+"/"
      
-    # TODO, define this in helper
-    path_graphs = "results/graphs/"+common
-    path_pickles = "results/pickles/"+common
-    path_labels_msp = "results/labels/"+common
-    path_labels = "results/labels/"+common
-    path_figs = "results/figs/"+common
-    path_presegs = "results/presegs/"+common
-    path_embeddings = "results/embeddings/"+common
-    path_clusterings = "results/clusterings/"+common
+    path_segmentation = "results/segmentation/"+common
+    makedirs(path_segmentation,exist_ok=True)
 
-    makedirs(path_graphs,exist_ok=True)
-    makedirs(path_pickles,exist_ok=True)
-    makedirs(path_labels,exist_ok=True)
-    makedirs(path_figs,exist_ok=True)
-    makedirs(path_presegs,exist_ok=True)
-    makedirs(path_embeddings,exist_ok=True)
-    makedirs(path_clusterings,exist_ok=True)
-    
     # will contain the final PRI and VOI results of every iteration
     GEST_PRI, GEST_VOI = [], []
     dirpath,_,images = list(walk(path_images))[0]
@@ -102,8 +88,27 @@ if __name__ == "__main__":
         n_cluster = int(argsy['nclusters']) if not(silh) else min(helper.silhouette(datagest,25),number_regions)
         
         clustering, segmentation = helper.GeST(embeddings, labels, n_cluster)
+        if(merge):
+            segmentation,has_merged=helper._merge(segmentation,image_lab,thr_pixels=250,thr=0.998,sigma=_sigma)
+        helper._savefig(segmentation, image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
 
         if(write): 
+            # TODO, define this in helper
+            path_graphs = "results/graphs/"+common
+            path_pickles = "results/pickles/"+common
+            path_labels_msp = "results/labels/"+common
+            path_labels = "results/labels/"+common
+            path_presegs = "results/presegs/"+common
+            path_embeddings = "results/embeddings/"+common
+            path_clusterings = "results/clusterings/"+common
+
+            makedirs(path_graphs,exist_ok=True)
+            makedirs(path_pickles,exist_ok=True)
+            makedirs(path_labels,exist_ok=True)
+            makedirs(path_presegs,exist_ok=True)
+            makedirs(path_embeddings,exist_ok=True)
+            makedirs(path_clusterings,exist_ok=True)
+    
             pickle.dump(labels,open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","wb"))
             pickle.dump(segmentation,open(path_labels+str(i+1)+"_"+filename[:-4]+".seg","wb"))
             #pickle.dump(clusterings, open(path_clusterings+str(i+1)+"_"+filename[:-4]+".clt","wb"))
@@ -111,7 +116,20 @@ if __name__ == "__main__":
             nx.write_gpickle(Gr, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
             nx.write_weighted_edgelist(Gr, path_graphs+filename[:-4]+".wgt", delimiter='\t')
             helper._savepreseg(labels, image, path_presegs+filename[:-4]+".png")
-            helper._savefig(segmentation, image, path_figs+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
         else:
-            # NICELY PLOT THE RESULTS
-            pass
+            from skimage.segmentation import mark_boundaries
+            import matplotlib.pyplot as plt
+            
+            colored_regions = color.label2rgb(segmentation, image, alpha=1, colors=helper._colors(segmentation,image), bg_label=0)
+            
+            fig, ax = plt.subplots(1, 2, figsize=(10, 10), sharex=True, sharey=True)
+            ax[0].imshow(mark_boundaries(image, labels))
+            ax[0].set_title("initial segmentation")
+            ax[1].imshow(mark_boundaries(colored_regions, segmentation, mode='thick'))
+            ax[1].set_title('final segmentation')
+            
+            for a in ax.ravel():
+                a.set_axis_off()
+            
+            plt.tight_layout()
+            plt.show()

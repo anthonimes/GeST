@@ -1,3 +1,6 @@
 [submodule "GeST/utils/node2vec"]
 	path = src/utils/node2vec
 	url = https://github.com/aditya-grover/node2vec
+[submodule "src/utils/pymeanshift"]
+	path = src/utils/pymeanshift
+	url = https://github.com/fjean/pymeanshift.git
