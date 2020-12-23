@@ -29,10 +29,9 @@ def _parse_args():
     images.add_argument("-i", "--image", help = "Path to the image")
     images.add_argument("-p", "--path", help = "Path to folder")
     ap.add_argument("-m", "--method", required = False, default="msp", help="pre-segmentation method")
-    ap.add_argument( "--sigma", required = True, help="kernel parameter", default=50)
-    clusters = ap.add_mutually_exclusive_group(required=True)
-    clusters.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
-    clusters.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
+    ap.add_argument( "--sigma", required = False, help="kernel parameter", default=125)
+    ap.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
+    ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
     ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default="False")
     ap.add_argument("--hs", required = False, help="spatial radius?", default=7)
     ap.add_argument("--hr", required = False, help="range radius?", default=4.5)
@@ -41,12 +40,24 @@ def _parse_args():
     ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
     ap.add_argument("--metrics", required = False, help="compute PRI and VI metrics (need groundtruth)")
     ap.add_argument("--merge", required = False, default="False", help="apply merging procedure")
-    return vars(ap.parse_args())
+    argsy = vars(ap.parse_args())
+
+    write = True if argsy['write'] == "True" else False
+    silh = True if argsy['silhouette'] == "True" else False
+    merge = True if argsy['merge'] == "True" else False
+    n_cluster = int(argsy['nclusters']) if not(silh) else min(silhouette(datagest,25),number_regions)
+    sigma=float(argsy['sigma'])
+
+    # TODO: allow for a single image or for path
+    path_images = argsy['path']
+    
+    return argsy['method'], write, silh, merge, n_cluster, path_images, sigma
 
 
 def _savemat(filepath,segmentation):
     savemat(filepath,{"segs": segmentation},appendmat=False)
-    
+   
+# FIXME: should be internal methods
 def _colors_by_region(N):
     return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]
 
@@ -145,11 +156,6 @@ def _get_Lab_adjacency(labels,image_lab,sigma=50):
             
         return adjacency
 
-def _meanshift_py(path,_sr,_rr,_mind):
-    ms_image = cv2.imread(path)
-    (segmented_image, labels, number_regions) = pms.segment(ms_image, spatial_radius=_sr, range_radius=_rr, min_density=_mind)
-    return 1+labels
-
 # TODO: make sure this coincides with final version of article
 def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     # NOTE; labels must be a matrix-like imaeg
@@ -232,19 +238,3 @@ def silhouette(points,kmax):
     best = scores.index(max(scores))+2
     return best
 
-def learn_embeddings(walks,dimensions=32,window_size=5,min_count=0,workers=4,iter=1):
-    '''
-    Learn embeddings by optimizing the Skipgram objective using SGD.
-    '''
-    walks = [list(map(str, walk)) for walk in walks]
-    model = Word2Vec(walks, size=dimensions, window=window_size, min_count=min_count, sg=1, workers=workers, iter=iter)
-    return model
-
-def GeST(embeddings, labels, n_cluster):
-    # using agglomerative clustering to obtain segmentation 
-    clustering = cl.AgglomerativeClustering(n_clusters=n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(embeddings)
-    labels_clustering = clustering.labels_
-    # building flat segmentation and then reshaping
-    segmentation=numpy.asarray([labels_clustering[value-1]+1 for line in labels for value in line]).reshape(labels.shape)
-
-    return labels_clustering, segmentation
