@@ -1,26 +1,22 @@
-from skimage import io,color,measure,img_as_ubyte
-from skimage.segmentation import mark_boundaries
-from skimage.future import graph
+#from skimage import io,color,measure,img_as_ubyte
+#from skimage.segmentation import mark_boundaries
+#from skimage.future import graph
 
-from scipy.io import savemat
-from scipy.special import comb
-from scipy.spatial import distance
+import skimage.measure
 
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import normalize
-from sklearn import cluster as cl
+#from scipy.io import savemat
+#from scipy.special import comb
+#from scipy.spatial import distance
 
-from statistics import mean, stdev
-from math import exp, ceil
+import statistics
 
-from gensim.models import Word2Vec
+import sklearn.metrics
+#from sklearn.preprocessing import normalize
+import sklearn.cluster
 
-# https://github.com/fjean/pymeanshift
-import pymeanshift as pms
-import argparse, random
-import numpy, cv2
-import matplotlib.pyplot as plt
-import networkx as nx
+
+
+import argparse
 
 def _parse_args():    
     # TODO: add argument for merge
@@ -45,7 +41,7 @@ def _parse_args():
     write = True if argsy['write'] == "True" else False
     silh = True if argsy['silhouette'] == "True" else False
     merge = True if argsy['merge'] == "True" else False
-    n_cluster = int(argsy['nclusters']) if not(silh) else min(silhouette(datagest,25),number_regions)
+    n_cluster = int(argsy['nclusters']) if not(silh) else None
     sigma=float(argsy['sigma'])
 
     # TODO: allow for a single image or for path
@@ -54,7 +50,7 @@ def _parse_args():
     return argsy['method'], write, silh, merge, n_cluster, path_images, sigma
 
 
-def _savemat(filepath,segmentation):
+'''def _savemat(filepath,segmentation):
     savemat(filepath,{"segs": segmentation},appendmat=False)
    
 # FIXME: should be internal methods
@@ -95,29 +91,34 @@ def _loadlabels(filename):
     return numpy.asarray(labels)
 
 def _loadembeddings(path):
-    return numpy.load(path)
+    return numpy.load(path)'''
 
+# FIXME: is there something built-in in skimage?
 def _color_features(labels,image_lab):
-    regions = measure.regionprops(labels)
-    mean_lab, stdev_lab = [0]*len(regions), [0]*len(regions)
-    feature_vector = [0]*len(regions)
-    #feature_vector=[]
+    regions = skimage.measure.regionprops(labels)
+    number_regions=len(regions)
+    mean_lab, stdev_lab = [0]*number_regions, [0]*number_regions
+    feature_vector = [0]*number_regions
     for i,region in enumerate(regions):
         # getting coordinates of region
         coords = region.coords
-        L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
-        for (l,(x,y)) in enumerate(coords):
-            L,a,b=image_lab[(x,y)]
-            L_value[l]=L
-            a_value[l]=a
-            b_value[l]=b
-        mean_lab[i]=[mean(L_value),mean(a_value),mean(b_value)]
-        stdev_lab[i]=[stdev(L_value),stdev(a_value),stdev(b_value)]
+        # all in one?
+        L_value = [image_lab[(x,y)][0] for (x,y) in coords]
+        a_value = [image_lab[(x,y)][1] for (x,y) in coords]
+        b_value = [image_lab[(x,y)][2] for (x,y) in coords]
+        #L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
+        #for (l,(x,y)) in enumerate(coords):
+        #    L,a,b=image_lab[(x,y)]
+        #    L_value[l]=L
+        #    a_value[l]=a
+        #    b_value[l]=b
+        mean_lab[i]=[statistics.mean(L_value),statistics.mean(a_value),statistics.mean(b_value)]
+        stdev_lab[i]=[statistics.stdev(L_value),statistics.stdev(a_value),statistics.stdev(b_value)]
         feature_vector[i]=mean_lab[i]+stdev_lab[i]
 
     return feature_vector
 
-def _get_Lab_adjacency(labels,image_lab,sigma=50):
+'''def _get_Lab_adjacency(labels,image_lab,sigma=50):
         regions = measure.regionprops(labels)
         mean_lab, stdev_lab = [0]*len(regions), [0]*len(regions)
         for index,region in enumerate(regions):
@@ -222,15 +223,15 @@ def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
         
     _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
     labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged
+    return labels_merge,has_merged'''
 
 def silhouette(points,kmax):
     def SSE():
         sse=[]
         for k in range(2, kmax):
-            km = cl.AgglomerativeClustering(n_clusters=k,affinity='cosine',linkage='average',distance_threshold=None).fit(points)
+            km = sklearn.cluster.AgglomerativeClustering(n_clusters=k,affinity='cosine',linkage='average',distance_threshold=None).fit(points)
             labels_clustering = km.labels_
-            silhouette_avg=silhouette_score(points, labels_clustering, metric = 'cosine')
+            silhouette_avg=sklearn.metrics.silhouette_score(points, labels_clustering, metric = 'cosine')
             sse.append(silhouette_avg)
         return sse
         
