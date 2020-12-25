@@ -8,4 +8,4 @@
 
 ### Default parameters
 
-![Default parameters]("images/gestapp.png")
+![Default parameters](/images/gestapp.png)
