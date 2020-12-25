@@ -3,6 +3,7 @@ import sklearn, sklearn.preprocessing
 import cv2
 import gensim
 import pymeanshift
+import numpy
 import utils.node2vec.src.node2vec as nv
 
 '''from skimage import io, color
@@ -47,7 +48,11 @@ class GeST:
 
         # THE PREFERED WAY IS TO PROVIDE LABELS FOR A PRESEGMENTATION
         if(self._preseg_method is not None):
+            import time, sys
             self.compute_preseg()
+            begin = time.process_time()
+            end = time.process_time()
+            print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # do we need to instantiate every class attribute?
         self._embeddings = None
@@ -70,10 +75,16 @@ class GeST:
 
     # TODO: "this is Algorithm 1 from the paper" + cut into functions
     def segmentation(self):
+        import time, sys
         # computing RAG
+        
+        begin = time.process_time() 
         self._RAG = skimage.future.graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
+        end = time.process_time()
+        print("RAG computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # computing embeddings
+        begin = time.process_time() 
         Gn2v = nv.Graph(self._RAG, False, 2, .5)
         Gn2v.preprocess_transition_probs()
         walks = Gn2v.simulate_walks(20, 20)
@@ -83,15 +94,23 @@ class GeST:
         model = gensim.models.Word2Vec(walks, size=32, window=5, min_count=0, sg=1, workers=4, iter=1)
 
         # getting the embeddings
+        begin = time.process_time() 
         representation = model.wv
         nodes=self._RAG.nodes()
         self._embeddings = [representation.get_vector(str(node)).tolist() for node in nodes]
+        end = time.process_time()
+        print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
+
         # NOTE: Mean is included in graph somehow?
+        begin = time.process_time() 
         feature_vector = sklearn.preprocessing.normalize(_color_features(self._presegmentation,self._image_lab))
         for l,v in enumerate(feature_vector):
             self._embeddings[l].extend(v)
+        end = time.process_time()
+        print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # clustering
+        begin = time.process_time() 
         scaler = sklearn.preprocessing.StandardScaler()
         data = scaler.fit_transform(self._embeddings)
             
@@ -102,6 +121,8 @@ class GeST:
         clustering = sklearn.cluster.AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
         self._clustering = clustering.labels_
         # building flat segmentation and then reshaping
-        self._segmentation=[ [ self._clustering[value-1]+1 for value in line ] for line in self._presegmentation ] 
-        #self._segmentation=numpy.asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
+        #self._segmentation=[ [ self._clustering[value-1]+1 for value in line ] for line in self._presegmentation ] 
+        self._segmentation=numpy.asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
+        end = time.process_time()
+        print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
 

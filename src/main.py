@@ -1,10 +1,13 @@
 from os import walk, makedirs 
 
+import pickle
+import numpy
+import networkx as nx
+
 import warnings
 warnings.filterwarnings("ignore")
 
 import helper
-
 import gest
 #import pandas as pd
 
@@ -35,12 +38,15 @@ if __name__ == "__main__":
         g = gest.GeST(dirpath+filename, n_cluster, preseg_method=method)
         g.segmentation()
         
-        # scaling features
-        #path_segmentation = "results/segmentation/"+common
-        #makedirs(path_segmentation,exist_ok=True)
-        #helper._savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
+        # writting the result as an image --- option -w allows to write in many other formats
+        path_segmentation = "results/segmentation/"+common
+        makedirs(path_segmentation,exist_ok=True)
+        helper._savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
 
-        '''if(write): 
+        if(write): 
+            import time, sys
+
+            begin = time.process_time()
             # TODO, define this in helper
             path_graphs = "results/graphs/"+common
             path_pickles = "results/pickles/"+common
@@ -64,20 +70,28 @@ if __name__ == "__main__":
             nx.write_gpickle(g._RAG, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
             nx.write_weighted_edgelist(g._RAG, path_graphs+filename[:-4]+".wgt", delimiter='\t')
             helper._savepreseg(g._presegmentation, g._image, path_presegs+filename[:-4]+".png")
+
+            end = time.process_time()
+            print("writting done in {} seconds".format(end-begin))
         else:
-            from skimage.segmentation import mark_boundaries
+            import skimage.segmentation
+            import skimage.color
             import matplotlib.pyplot as plt
+        
+            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=helper._colors(g._segmentation,g._image), bg_label=0)
             
-            colored_regions = color.label2rgb(g._segmentation, g._image, alpha=1, colors=helper._colors(g._segmentation,g._image), bg_label=0)
-            
-            fig, ax = plt.subplots(1, 2, figsize=(10, 10), sharex=True, sharey=True)
-            ax[0].imshow(mark_boundaries(g._image, g._presegmentation))
-            ax[0].set_title("initial segmentation")
-            ax[1].imshow(mark_boundaries(colored_regions, g._segmentation, mode='thick'))
-            ax[1].set_title('final segmentation')
+            fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
+            ax[0][0].imshow(skimage.segmentation.mark_boundaries(g._image, g._presegmentation))
+            ax[0][0].set_title("initial segmentation")
+            skimage.future.graph.show_rag(g._presegmentation, g._RAG, g._image, ax=ax[0][1])
+            ax[0][1].set_title("region adjacency graph")
+            ax[1][0].imshow(skimage.segmentation.mark_boundaries(g._image, g._segmentation, mode='thick'))
+            ax[1][0].set_title('final segmentation')
+            ax[1][1].imshow(skimage.segmentation.mark_boundaries(colored_regions, g._segmentation, mode='thick'))
+            ax[1][1].set_title('colored segmentation')
             
             for a in ax.ravel():
                 a.set_axis_off()
             
             plt.tight_layout()
-            plt.show()'''
+            plt.show()

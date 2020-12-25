@@ -1,21 +1,12 @@
-#from skimage import io,color,measure,img_as_ubyte
-#from skimage.segmentation import mark_boundaries
-#from skimage.future import graph
+from skimage import io,color,measure,img_as_ubyte
+from skimage.segmentation import mark_boundaries
 
-import skimage.measure
-
-#from scipy.io import savemat
-#from scipy.special import comb
-#from scipy.spatial import distance
-
-import statistics
+from math import sqrt
 
 import sklearn.metrics
-#from sklearn.preprocessing import normalize
 import sklearn.cluster
 
-
-
+import numpy
 import argparse
 
 def _parse_args():    
@@ -55,7 +46,7 @@ def _parse_args():
    
 # FIXME: should be internal methods
 def _colors_by_region(N):
-    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]
+    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]'''
 
 def _colors(segmentation,image):
     regions = measure.regionprops(segmentation)
@@ -65,13 +56,14 @@ def _colors(segmentation,image):
     for index,region in enumerate(regions):
         # getting coordinates of region
         coords = region.coords
-        R_value, G_value, B_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
+        size_coords = len(coords)
+        R_value, G_value, B_value=[0]*size_coords,[0]*size_coords,[0]*size_coords
         for p,(x,y) in enumerate(coords):
             R,G,B=image[(x,y)]
             R_value[p]=R
             G_value[p]=G
             B_value[p]=B
-        colors[index]=(mean(R_value),mean(G_value),mean(B_value))
+        colors[index]=(sum(R_value)/size_coords,sum(G_value)/size_coords,sum(B_value)/size_coords)
     return colors
 
 def _savepreseg(segmentation=None,image=None,path=None,name=None):
@@ -80,8 +72,8 @@ def _savepreseg(segmentation=None,image=None,path=None,name=None):
 def _savefig(segmentation=None,image=None,path=None,name=None):
     colored_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors(segmentation,image), bg_label=0)
     io.imsave(path,img_as_ubyte(mark_boundaries(colored_regions, segmentation, mode='thick')))
-    colored_by_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors_by_region(numpy.amax(segmentation)), bg_label=0)
-    io.imsave(path[:-4]+"_COLORMAP"+path[-4:],img_as_ubyte(mark_boundaries(colored_by_regions, segmentation, mode='thick')))
+    #colored_by_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors_by_region(numpy.amax(segmentation)), bg_label=0)
+    #io.imsave(path[:-4]+"_COLORMAP"+path[-4:],img_as_ubyte(mark_boundaries(colored_by_regions, segmentation, mode='thick')))
 
 def _loadlabels(filename):
     labels = []
@@ -91,74 +83,41 @@ def _loadlabels(filename):
     return numpy.asarray(labels)
 
 def _loadembeddings(path):
-    return numpy.load(path)'''
+    return numpy.load(path)
 
 # FIXME: is there something built-in in skimage?
 def _color_features(labels,image_lab):
-    regions = skimage.measure.regionprops(labels)
+    regions = measure.regionprops(labels)
     number_regions=len(regions)
     mean_lab, stdev_lab = [0]*number_regions, [0]*number_regions
     feature_vector = [0]*number_regions
     for i,region in enumerate(regions):
         # getting coordinates of region
         coords = region.coords
-        # all in one?
-        L_value = [image_lab[(x,y)][0] for (x,y) in coords]
-        a_value = [image_lab[(x,y)][1] for (x,y) in coords]
-        b_value = [image_lab[(x,y)][2] for (x,y) in coords]
-        #L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
-        #for (l,(x,y)) in enumerate(coords):
-        #    L,a,b=image_lab[(x,y)]
-        #    L_value[l]=L
-        #    a_value[l]=a
-        #    b_value[l]=b
-        mean_lab[i]=[statistics.mean(L_value),statistics.mean(a_value),statistics.mean(b_value)]
-        stdev_lab[i]=[statistics.stdev(L_value),statistics.stdev(a_value),statistics.stdev(b_value)]
+        size_coords = len(coords)
+        L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
+        for (l,(x,y)) in enumerate(coords):
+            L,a,b=image_lab[(x,y)]
+            L_value[l]=L
+            a_value[l]=a
+            b_value[l]=b
+        # FIXME: statistics functions are very slow: try with numpy?
+        mean_lab[i]=[sum(L_value)/size_coords,sum(a_value)/size_coords,sum(b_value)/size_coords]
+        def variance(data):
+            n = len(data)
+            mean = sum(data) / n
+            deviations = [(x - mean) ** 2 for x in data]
+            variance = sum(deviations) / n
+            return variance
+
+        #stdev_lab[i]=[sqrt(variance(L_value)),sqrt(variance(a_value)),sqrt(variance(b_value))]
+        stdev_lab[i]=[numpy.std(L_value),numpy.std(a_value),numpy.std(b_value)]
         feature_vector[i]=mean_lab[i]+stdev_lab[i]
 
     return feature_vector
 
-'''def _get_Lab_adjacency(labels,image_lab,sigma=50):
-        regions = measure.regionprops(labels)
-        mean_lab, stdev_lab = [0]*len(regions), [0]*len(regions)
-        for index,region in enumerate(regions):
-            # getting coordinates of region
-            coords = region.coords
-            L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
-            for (i,(x,y)) in enumerate(coords):
-                L,a,b=image_lab[(x,y)]
-                L_value[i]=L
-                a_value[i]=a
-                b_value[i]=b
-            mean_lab[index]=[mean(L_value),mean(a_value),mean(b_value)]
-            stdev_lab[index]=[stdev(L_value),stdev(a_value),stdev(b_value)]
-
-        adjacency = numpy.zeros((len(numpy.unique(labels))+1, len(numpy.unique(labels))+1))
-        pairs=0
-        total_pairs=0
-        feature_vector=[]
-        for i in range(1,len(adjacency)):
-            for j in range(i+1,len(adjacency)):
-                # NOTE: check
-                Li=mean_lab[i-1]#+stdev_lab[i-1]
-                Lj = mean_lab[j-1]#+stdev_lab[j-1]
-                Si=stdev_lab[i-1]
-                Sj=stdev_lab[j-1]
-                dist=color.deltaE_cie76(Li,Lj)
-                distS=color.deltaE_cie76(Si,Sj)
-                #gk=exp(-((dist**2)/(2*(sigma**2))))
-                #gkS=exp(-((distS**2)/(2*(sigma**2))))
-                gk=exp(-((dist**2)/(sigma)))
-                #gkS=exp(-((distS**2)/(sigma)))
-                #sim=gk*gkS
-                sim=gk
-                adjacency[i][j] = sim
-                adjacency[j][i] = sim
-            
-        return adjacency
-
 # TODO: make sure this coincides with final version of article
-def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
+'''def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     # NOTE; labels must be a matrix-like imaeg
     labels_merge = numpy.copy(labels)
     merged=True
@@ -168,7 +127,7 @@ def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
     G = graph.RAG(labels_merge,connectivity=1)
     while(merged):
         regions = measure.regionprops(labels_merge)
-        # FIXME: totally useless to compute again the ones that have not changed...
+        # FIXME: totally useless to compute again the ones that have not changed
         merged=False
         
         def _findregion(R):
