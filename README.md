@@ -55,7 +55,6 @@ optional arguments:
 + `scikit-image` 
 + `numpy`
 + `pymeanshift` --- https://github.com/fjean/pymeanshift
-+ `node2vec` --- https://github.com/aditya-grover/node2vec
 
 ## Examples of application
 
