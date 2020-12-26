@@ -39,14 +39,6 @@ def _parse_args():
     
     return argsy['method'], write, silh, merge, n_cluster, path_images, sigma
 
-
-'''def _savemat(filepath,segmentation):
-    savemat(filepath,{"segs": segmentation},appendmat=False)
-   
-# FIXME: should be internal methods
-def _colors_by_region(N):
-    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]'''
-
 def _colors(segmentation,image):
     regions = measure.regionprops(segmentation)
     # computing masks to apply to region histograms
@@ -114,74 +106,6 @@ def _color_features(labels,image_lab):
         feature_vector[i]=mean_lab[i]+stdev_lab[i]
 
     return feature_vector
-
-# TODO: make sure this coincides with final version of article
-'''def _merge(labels,image_lab,thr_pixels=200,thr=0.995,sigma=5):
-    # NOTE; labels must be a matrix-like imaeg
-    labels_merge = numpy.copy(labels)
-    merged=True
-    has_merged=False
-    # initial computation, will be maintained during algorithm
-    feature_vector = normalize(numpy.asarray(_color_features(labels_merge,image_lab)))
-    G = graph.RAG(labels_merge,connectivity=1)
-    while(merged):
-        regions = measure.regionprops(labels_merge)
-        # FIXME: totally useless to compute again the ones that have not changed
-        merged=False
-        
-        def _findregion(R):
-            for i in range(len(regions)):
-                if regions[i].label == R:
-                    return i
-        
-        for u,v in G.edges():
-            Ri=regions[_findregion(u)]
-            Rj=regions[_findregion(v)]
-            sim=1-distance.cosine(feature_vector[Ri.label-1],feature_vector[Rj.label-1])
-            if sim >= thr:
-                #print("similarity merging region {} and {}.".format(Ri.label,Rj.label))
-                max_label = Ri if Ri.label > Rj.label else Rj
-                min_label = Ri if Ri.label < Rj.label else Rj
-                for (x,y) in max_label.coords:
-                    labels_merge[(x,y)] = min_label.label
-                merged=True
-                has_merged=True
-                feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
-                G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
-            if(merged):
-                break
-        if(merged):
-            continue
-                
-        # trying to merge small regions to their most similar neighbors
-        # FIXME: IS IT BETTER AFTER OR BEFORE MERGING SMALL REGIONS?
-        for i in range(len(regions)):
-            Ri = regions[i]
-            lenRi = len(Ri.coords)
-            if(lenRi < thr_pixels):
-                # WARNING: neighbors in graphs are labels, not indices of regions array!
-                neighbors = list(G.neighbors(Ri.label))
-                closest = max([(regions[_findregion(Rj)].label,1-distance.cosine(feature_vector[Ri.label-1],feature_vector[regions[_findregion(Rj)].label-1])) for Rj in neighbors],key=lambda x: x[1])[0]
-                Rj = regions[_findregion(closest)]
-                max_label = Ri if Ri.label > Rj.label else Rj
-                min_label = Ri if Ri.label < Rj.label else Rj
-                # could this actually be enough?
-                #max_label.label = min_label.label
-                for (x,y) in max_label.coords:
-                    labels_merge[(x,y)] = min_label.label
-                merged=True
-                has_merged=True
-                # updating feature vector
-                feature_vector[min_label.label-1] = (feature_vector[min_label.label-1]+feature_vector[max_label.label-1])/2
-                G = nx.contracted_nodes(G,min_label.label,max_label.label,self_loops=False)
-            if(merged):
-                break
-        if(merged):
-            continue
-        
-    _, labels_merge = numpy.unique(labels_merge,return_inverse=1)
-    labels_merge=(1+labels_merge).reshape(labels.shape)
-    return labels_merge,has_merged'''
 
 def silhouette(points,kmax):
     def SSE():

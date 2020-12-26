@@ -37,6 +37,8 @@ if __name__ == "__main__":
         # load the image and convert it to a floating point data type
         g = src.gest.GeST(dirpath+filename, n_cluster, preseg_method=method)
         g.segmentation()
+        if(merge):
+            g.merge()
         
         # writting the result as an image --- option -w allows to write in many other formats
         path_segmentation = "results/segmentation/"+common
