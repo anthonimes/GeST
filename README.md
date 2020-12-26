@@ -7,6 +7,13 @@ This repository provides a reference implementation for `GeST`, an image segment
 
 ## How to use
 
+`GeST` uses two modules as subroutines. Once cloned, the repository needs to be prepared using: 
+
+```
+git submodule init
+git submodule update
+```
+
 `src/gest.py` provides a class for computing segmentations. The objects need to be given 
 initial embeddings and presegmentation to compute the final segmentation. If `None` is given on any 
 of these parameters, default algorithms (namely `MeanShift` and `node2vec`) will be used to compute them.
@@ -18,6 +25,22 @@ The only required argument consists in a path to folder containing images to seg
 Other arguments optional can be provided and are described using the `-h` option.
 
 ```
+usage: main.py [-h] -p PATH [-m METHOD] [--sigma SIGMA] [-n NCLUSTERS] [--silhouette] [--hs HS] [--hr HR] [--mind MIND] [--merge] [-w]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -p PATH, --path PATH  path to folder containing images (default: None)
+  -m METHOD, --method METHOD
+                        pre-segmentation method (default: msp)
+  --sigma SIGMA         kernel parameter (default: 125)
+  -n NCLUSTERS, --nclusters NCLUSTERS
+                        number of clusters (default: 24)
+  --silhouette          use silhouette method instead of fixed number of clusters (default: False)
+  --hs HS               spatial radius (default: 7)
+  --hr HR               range radius (default: 4.5)
+  --mind MIND           min density (default: 50)
+  --merge               apply merging procedure (default: False)
+  -w, --write           write all files to hard drive (default: False)
 ```
 
 ### Requirements
