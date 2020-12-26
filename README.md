@@ -14,6 +14,11 @@ git submodule init
 git submodule update
 ```
 
+Submodules are used in order to keep track of possible modifications. However, `node2vec` is not 
+compatible with `python3` so far, and hence one needs to remove lines `46` and `48` of the following file: 
+
+`src/utils/node2vec/src/node2vec.py`
+
 `src/gest.py` provides a class for computing segmentations. The objects need to be given 
 initial embeddings and presegmentation to compute the final segmentation. If `None` is given on any 
 of these parameters, default algorithms (namely `MeanShift` and `node2vec`) will be used to compute them.
