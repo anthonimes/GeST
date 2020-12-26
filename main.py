@@ -7,8 +7,8 @@ import networkx as nx
 import warnings
 warnings.filterwarnings("ignore")
 
-import helper
-import gest
+import src.helper
+import src.gest
 #import pandas as pd
 
 if __name__ == "__main__":
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     # construct the argument parser and parse the arguments
     # common arguments
     # TODO: should maybe return the GeST instance?
-    method, write, silhouette, merge, n_cluster, path_images, _sigma = helper._parse_args()
+    method, write, silhouette, merge, n_cluster, path_images, _sigma = src.helper._parse_args()
 
     # meanshift and SLIC arguments
     '''if method == "SLIC":
@@ -35,13 +35,13 @@ if __name__ == "__main__":
 
     for i,filename in enumerate(sorted(images)):
         # load the image and convert it to a floating point data type
-        g = gest.GeST(dirpath+filename, n_cluster, preseg_method=method)
+        g = src.gest.GeST(dirpath+filename, n_cluster, preseg_method=method)
         g.segmentation()
         
         # writting the result as an image --- option -w allows to write in many other formats
         path_segmentation = "results/segmentation/"+common
         makedirs(path_segmentation,exist_ok=True)
-        helper._savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
+        src.helper._savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(n_cluster)+".png")
 
         if(write): 
             import time, sys
@@ -69,7 +69,7 @@ if __name__ == "__main__":
             numpy.save(path_embeddings+filename[:-4]+".emb",g._embeddings)
             nx.write_gpickle(g._RAG, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
             nx.write_weighted_edgelist(g._RAG, path_graphs+filename[:-4]+".wgt", delimiter='\t')
-            helper._savepreseg(g._presegmentation, g._image, path_presegs+filename[:-4]+".png")
+            src.helper._savepreseg(g._presegmentation, g._image, path_presegs+filename[:-4]+".png")
 
             end = time.process_time()
             print("writting done in {} seconds".format(end-begin))
@@ -78,7 +78,7 @@ if __name__ == "__main__":
             import skimage.color
             import matplotlib.pyplot as plt
         
-            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=helper._colors(g._segmentation,g._image), bg_label=0)
+            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=src.helper._colors(g._segmentation,g._image), bg_label=0)
             
             fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
             ax[0][0].imshow(skimage.segmentation.mark_boundaries(g._image, g._presegmentation))

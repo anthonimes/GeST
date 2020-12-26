@@ -11,28 +11,27 @@ import argparse
 
 def _parse_args():    
     # TODO: add argument for merge
-    ap = argparse.ArgumentParser()
-    images = ap.add_mutually_exclusive_group(required=True)
-    images.add_argument("-i", "--image", help = "Path to the image")
-    images.add_argument("-p", "--path", help = "Path to folder")
+    ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("-p", "--path", required=True, help = "path to folder containing images")
     ap.add_argument("-m", "--method", required = False, default="msp", help="pre-segmentation method")
     ap.add_argument( "--sigma", required = False, help="kernel parameter", default=125)
+
     ap.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
-    ap.add_argument("--silhouette", required = False, help="use silhouette method instead of fixed number of clusters")
-    ap.add_argument("-w", "--write", required = False, help="write all files to hard drive?", default="False")
-    ap.add_argument("--hs", required = False, help="spatial radius?", default=7)
-    ap.add_argument("--hr", required = False, help="range radius?", default=4.5)
+    ap.add_argument("--silhouette", required = False, default=False, action="store_true", help="use silhouette method instead of fixed number of clusters")
+
+    ap.add_argument("--hs", required = False, help="spatial radius", default=7)
+    ap.add_argument("--hr", required = False, help="range radius", default=4.5)
     ap.add_argument( "--mind", required = False, help="min density", default=50)
-    ap.add_argument( "--segments", required = False, help="number of segments (SLIC)", default=50)
-    ap.add_argument( "--compactness", required = False, help="compactness (SLIC)", default=50)
-    ap.add_argument("--metrics", required = False, help="compute PRI and VI metrics (need groundtruth)")
-    ap.add_argument("--merge", required = False, default="False", help="apply merging procedure")
+
+    ap.add_argument("--merge", required = False, default=False, action="store_true", help="apply merging procedure")
+    ap.add_argument("-w", "--write", required = False, default=False, action="store_true", help="write all files to hard drive")
     argsy = vars(ap.parse_args())
 
-    write = True if argsy['write'] == "True" else False
-    silh = True if argsy['silhouette'] == "True" else False
-    merge = True if argsy['merge'] == "True" else False
-    n_cluster = int(argsy['nclusters']) if not(silh) else None
+    write = argsy['write']
+    silh = argsy['silhouette']
+    merge = argsy['merge']
+
+    n_cluster =  None if silh else int(argsy['nclusters'])
     sigma=float(argsy['sigma'])
 
     # TODO: allow for a single image or for path

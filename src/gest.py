@@ -1,28 +1,22 @@
-import skimage.io, skimage.color, skimage.future, skimage
-import sklearn, sklearn.preprocessing
-import cv2
-import gensim
-import pymeanshift
-import numpy
-import utils.node2vec.src.node2vec as nv
-
-'''from skimage import io, color
+# FIXME: use local imports instead
+from skimage import io, color
 from skimage.future import graph
 from skimage.util import img_as_float
 
-from sklearn import cluster as cl
+from sklearn.cluster import AgglomerativeClustering
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import normalize
 
-from utils.node2vec.src import node2vec
 from gensim.models import Word2Vec
 
 # https://github.com/fjean/pymeanshift
 from pymeanshift import segment
-from cv2 import imread'''
+from cv2 import imread
+from src.utils.node2vec.src import node2vec as nv
+from src.helper import _color_features, silhouette
 
-from helper import _color_features, silhouette
+from numpy import asarray
 
 class GeST:
     # TODO: describe required arguments and optional ones
@@ -32,12 +26,13 @@ class GeST:
         self._n_cluster = args[1]
 
         # L*a*b* image
-        self._image = skimage.io.imread(self._path_to_image)
-        self._image = skimage.img_as_float(self._image)
-        self._image_lab = (skimage.color.rgb2lab(self._image) + [0,128,128]) #// [1,1,1]
+        self._image = io.imread(self._path_to_image)
+        self._image = img_as_float(self._image)
+        self._image_lab = (color.rgb2lab(self._image) + [0,128,128]) #// [1,1,1]
 
         self._preseg_method = kwargs.get("preseg_method", None)
         self._presegmentation = kwargs.get("presegmentation", None)
+        self._embeddings = kwargs.get("embeddings", None)
 
         # TODO: allow for external classes to deal with initial preseg
         self._hs = 7
@@ -46,19 +41,18 @@ class GeST:
         self._sigma = 125
         self._number_of_regions = 0
 
-        # THE PREFERED WAY IS TO PROVIDE LABELS FOR A PRESEGMENTATION
-        if(self._preseg_method is not None):
-            import time, sys
+        # in case no presegmentation labels are provided 
+        # FIXME: offer different possibilities according to method
+        if(self._presegmentation is None):
             self.compute_preseg()
-            begin = time.process_time()
-            end = time.process_time()
-            print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
+
+        self._RAG = None
+        if(self._embeddings is None):
+            self.compute_embeddings()
 
         # do we need to instantiate every class attribute?
-        self._embeddings = None
-        self._RAG = None
         self._segmentation = None
-        self._segmentation_merged = None
+        self._segmentation_merged = False
         self._clustering = None
 
     def set_msp_parameters(self,_hs,_hr,_M):
@@ -68,18 +62,21 @@ class GeST:
 
     # FIXME: different computation according to method used
     def compute_preseg(self):
-        ms_image = cv2.imread(self._path_to_image)
+        import time, sys
+        begin = time.process_time()
+        ms_image = imread(self._path_to_image)
         # TODO: try using Quickshift (from skimage) instead
-        (_, labels, self._number_of_regions) = pymeanshift.segment(ms_image, spatial_radius=self._hs, range_radius=self._hr, min_density=self._M)
+        (_, labels, self._number_of_regions) = segment(ms_image, spatial_radius=self._hs, range_radius=self._hr, min_density=self._M)
         self._presegmentation = 1+labels
+        end = time.process_time()
+        print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
 
-    # TODO: "this is Algorithm 1 from the paper" + cut into functions
-    def segmentation(self):
+    def compute_embeddings(self):
         import time, sys
         # computing RAG
         
         begin = time.process_time() 
-        self._RAG = skimage.future.graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
+        self._RAG = graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
         end = time.process_time()
         print("RAG computed in {} seconds".format(end-begin), file=sys.stderr)
 
@@ -91,7 +88,7 @@ class GeST:
         # learn embeddings by optimizing the Skipgram objective using SGD.
         walks = [list(map(str, walk)) for walk in walks]
         # FIXME: allow parameterization
-        model = gensim.models.Word2Vec(walks, size=32, window=5, min_count=0, sg=1, workers=4, iter=1)
+        model = Word2Vec(walks, size=32, window=5, min_count=0, sg=1, workers=4, iter=1)
 
         # getting the embeddings
         begin = time.process_time() 
@@ -101,9 +98,13 @@ class GeST:
         end = time.process_time()
         print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
 
+    # TODO: "this is Algorithm 1 from the paper" + cut into functions
+    def segmentation(self):
+        import time, sys
+
         # NOTE: Mean is included in graph somehow?
         begin = time.process_time() 
-        feature_vector = sklearn.preprocessing.normalize(_color_features(self._presegmentation,self._image_lab))
+        feature_vector = normalize(_color_features(self._presegmentation,self._image_lab))
         for l,v in enumerate(feature_vector):
             self._embeddings[l].extend(v)
         end = time.process_time()
@@ -111,18 +112,18 @@ class GeST:
 
         # clustering
         begin = time.process_time() 
-        scaler = sklearn.preprocessing.StandardScaler()
+        scaler = StandardScaler()
         data = scaler.fit_transform(self._embeddings)
             
         if(self._n_cluster is None):
-            self._n_cluster = min(silhouette(data,25),self.number_of_regions)
+            self._n_cluster = min(silhouette(data,25),self._number_of_regions)
         
         # using agglomerative clustering to obtain segmentation 
-        clustering = sklearn.cluster.AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
+        clustering = AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
         self._clustering = clustering.labels_
         # building flat segmentation and then reshaping
         #self._segmentation=[ [ self._clustering[value-1]+1 for value in line ] for line in self._presegmentation ] 
-        self._segmentation=numpy.asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
+        self._segmentation=asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
         end = time.process_time()
         print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
 
