@@ -62,26 +62,18 @@ class GeST:
 
     # FIXME: different computation according to method used
     def compute_preseg(self):
-        import time, sys
-        begin = time.process_time()
         ms_image = imread(self._path_to_image)
         # TODO: try using Quickshift (from skimage) instead
         (_, labels, self._number_of_regions) = segment(ms_image, spatial_radius=self._hs, range_radius=self._hr, min_density=self._M)
         self._presegmentation = 1+labels
-        end = time.process_time()
-        print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
 
     def compute_embeddings(self):
         import time, sys
         # computing RAG
         
-        begin = time.process_time() 
         self._RAG = graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
-        end = time.process_time()
-        print("RAG computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # computing embeddings
-        begin = time.process_time() 
         Gn2v = nv.Graph(self._RAG, False, 2, .5)
         Gn2v.preprocess_transition_probs()
         walks = Gn2v.simulate_walks(20, 20)
@@ -91,27 +83,18 @@ class GeST:
         model = Word2Vec(walks, size=32, window=5, min_count=0, sg=1, workers=4, iter=1)
 
         # getting the embeddings
-        begin = time.process_time() 
         representation = model.wv
         nodes=self._RAG.nodes()
         self._embeddings = [representation.get_vector(str(node)).tolist() for node in nodes]
-        end = time.process_time()
-        print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
 
     # TODO: "this is Algorithm 1 from the paper" + cut into functions
     def segmentation(self):
-        import time, sys
-
         # NOTE: Mean is included in graph somehow?
-        begin = time.process_time() 
         feature_vector = normalize(_color_features(self._presegmentation,self._image_lab))
         for l,v in enumerate(feature_vector):
             self._embeddings[l].extend(v)
-        end = time.process_time()
-        print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # clustering
-        begin = time.process_time() 
         scaler = StandardScaler()
         data = scaler.fit_transform(self._embeddings)
             
@@ -124,6 +107,4 @@ class GeST:
         # building flat segmentation and then reshaping
         #self._segmentation=[ [ self._clustering[value-1]+1 for value in line ] for line in self._presegmentation ] 
         self._segmentation=asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
-        end = time.process_time()
-        print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
 
