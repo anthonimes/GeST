@@ -1,3 +1,6 @@
+# TEMPORARY
+from skimage import io, color, measure
+
 from os import walk, makedirs 
 
 import pickle
@@ -38,7 +41,7 @@ if __name__ == "__main__":
         g = src.gest.GeST(dirpath+filename, n_cluster, preseg_method=method)
         g.segmentation()
         if(merge):
-            g.merge()
+            g.all_merge(thr_pixels=250,thr=0.998,sigma=125)
         
         # writting the result as an image --- option -w allows to write in many other formats
         path_segmentation = "results/segmentation/"+common
@@ -80,20 +83,29 @@ if __name__ == "__main__":
             import skimage.color
             import matplotlib.pyplot as plt
         
-            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=src.helper._colors(g._segmentation,g._image), bg_label=0)
-            
-            fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
+            fig, ax = plt.subplots(3, 2, figsize=(12, 8), sharex=True, sharey=True)
             ax[0][0].imshow(skimage.segmentation.mark_boundaries(g._image, g._presegmentation))
             ax[0][0].set_title("initial segmentation")
             skimage.future.graph.show_rag(g._presegmentation, g._RAG, g._image, ax=ax[0][1])
             ax[0][1].set_title("region adjacency graph")
-            ax[1][0].imshow(skimage.segmentation.mark_boundaries(g._image, g._segmentation, mode='thick'))
+                
+            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=src.helper._colors(g._segmentation,g._image), bg_label=0)
+            ax[1][0].imshow(skimage.segmentation.mark_boundaries(colored_regions, g._segmentation, mode='thick'))
             ax[1][0].set_title('final segmentation')
+            colored_regions = skimage.color.label2rgb(g._segmentation, g._image, alpha=1, colors=src.helper._colors_by_region(numpy.amax(g._segmentation)), bg_label=0)
             ax[1][1].imshow(skimage.segmentation.mark_boundaries(colored_regions, g._segmentation, mode='thick'))
             ax[1][1].set_title('colored segmentation')
+
+            colored_regions = skimage.color.label2rgb(g._segmentation_merged, g._image, alpha=1, colors=src.helper._colors(g._segmentation_merged,g._image), bg_label=0)
+            ax[2][0].imshow(skimage.segmentation.mark_boundaries(colored_regions, g._segmentation_merged, mode='thick'))
+            ax[2][0].set_title('final segmentation')
+            colored_regions = skimage.color.label2rgb(g._segmentation_merged, g._image, alpha=1, colors=src.helper._colors_by_region(numpy.amax(g._segmentation_merged)), bg_label=0)
+            ax[2][1].imshow(skimage.segmentation.mark_boundaries(colored_regions, g._segmentation_merged, mode='thick'))
+            ax[2][1].set_title('colored segmentation')
             
             for a in ax.ravel():
                 a.set_axis_off()
             
             plt.tight_layout()
             plt.show()
+

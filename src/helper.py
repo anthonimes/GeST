@@ -1,7 +1,8 @@
 from skimage import io,color,measure,img_as_ubyte
 from skimage.segmentation import mark_boundaries
 
-from math import sqrt
+from math import sqrt, ceil
+import random
 
 import sklearn.metrics
 import sklearn.cluster
@@ -60,6 +61,9 @@ def _colors(segmentation,image):
 def _savepreseg(segmentation=None,image=None,path=None,name=None):
     io.imsave(path,img_as_ubyte(mark_boundaries(image,segmentation, mode='thick')))
 
+def _colors_by_region(N):
+    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]
+
 def _savefig(segmentation=None,image=None,path=None,name=None):
     colored_regions = color.label2rgb(segmentation, image, alpha=1, colors=_colors(segmentation,image), bg_label=0)
     io.imsave(path,img_as_ubyte(mark_boundaries(colored_regions, segmentation, mode='thick')))
@@ -94,6 +98,7 @@ def _color_features(labels,image_lab):
             b_value[l]=b
         # FIXME: statistics functions are very slow: try with numpy?
         mean_lab[i]=[sum(L_value)/size_coords,sum(a_value)/size_coords,sum(b_value)/size_coords]
+
         def variance(data):
             n = len(data)
             mean = sum(data) / n
