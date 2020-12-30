@@ -11,13 +11,13 @@ import numpy
 import argparse
 
 def _parse_args():    
-    # TODO: add argument for merge
+    # TODO: add argument for contiguity
     ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("-p", "--path", required=True, help = "path to folder containing images")
     ap.add_argument("-m", "--method", required = False, default="msp", help="pre-segmentation method")
     ap.add_argument( "--sigma", required = False, help="kernel parameter", default=125)
 
-    ap.add_argument("-n", "--nclusters", required = False, default=24, help="number of clusters")
+    ap.add_argument("-n", "--nclusters", required = False, default=21, help="number of clusters")
     ap.add_argument("--silhouette", required = False, default=False, action="store_true", help="use silhouette method instead of fixed number of clusters")
 
     ap.add_argument("--hs", required = False, help="spatial radius", default=7)

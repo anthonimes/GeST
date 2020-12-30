@@ -177,45 +177,34 @@ class GeST:
     def contiguous(self):
         import time, sys
         import matplotlib.pyplot as plt
-        Gr = graph.RAG(self._presegmentation, connectivity=1)
         begin = time.process_time()
-        # MERGING CONTIGUOUS REGIONS ONLY IN A FIRST PLACE
-        new_labels_clustering = copy(self._clustering)
+        
+        Gr = graph.RAG(self._presegmentation, connectivity=1)
+
+        new_labels = copy(self._clustering)
         for _label in unique(self._clustering):
-            labelmax = amax(new_labels_clustering)
+            labelmax = amax(new_labels)
             # getting regions with this label
-            vertices = 1+argwhere(self._clustering == _label).flatten()
-            # ugly but if connected, the if will fail...
-            Gc = Gr if len(Gr.subgraph(vertices).edges())==0 else Gr.subgraph(vertices)
-            connected_component = sorted(connected_components(Gc), key=len, reverse=True)
-            if(len(connected_component)>1):
+            vertices = 1+argwhere(new_labels == _label).flatten()
+            Gc = Gr.subgraph(vertices)
+            if(not(is_connected(Gc))):
+                connected_component = sorted(connected_components(Gc), key=len, reverse=True)
                 to_relabel=connected_component[1:]
                 labelcpt=1
                 for cc in to_relabel:
                     for vertex in cc:
-                        new_labels_clustering[vertex-1]=labelmax+labelcpt
+                        new_labels[vertex-1]=labelmax+labelcpt
                     labelcpt+=1
 
+        self._clustering = new_labels
         # computing corresponding new segmentation
         for l,line in enumerate(self._presegmentation):
             for j,value in enumerate(line):
-                self._segmentation[l][j] = new_labels_clustering[value-1]+1
-        
+                self._segmentation[l][j] = new_labels[value-1]+1
+       
         end = time.process_time()
         print("contiguous done in {} seconds".format(end-begin))
         print("final segmentation has {} regions".format(len(unique(self._segmentation))))
-        '''fig, ax = plt.subplots()
-        colored_regions = color.label2rgb(self._segmentation, self._image, alpha=1, colors=_colors_by_region(amax(self._segmentation)), bg_label=0)
-        im = ax.imshow(colored_regions)
-
-        regions = measure.regionprops(self._segmentation)
-        for region in regions:
-            xy = region.centroid
-            x = xy[1]
-            y = xy[0]
-            text = ax.text(x, y, region.label,ha="center", va="center", color="w")
-
-        plt.show()'''
 
     def merge_cosine(self,thr=0.997,sigma=125):
         import matplotlib.pyplot as plt
@@ -226,7 +215,8 @@ class GeST:
             self._segmentation_merged = copy(self._segmentation)
         merged=True
         # initial computation, will be maintained during algorithm
-        G = graph.RAG(self._segmentation_merged,connectivity=1)
+        #G = graph.RAG(self._segmentation_merged,connectivity=1)
+        G = graph.rag_mean_color(self._image_lab,self._segmentation_merged,connectivity=2,mode='similarity',sigma=self._sigma)
 
         def _findregion(R):
             for i in range(len(regions)):
@@ -244,7 +234,8 @@ class GeST:
             Ri=_findregion(u)
             Rj=_findregion(v)
             if not(regions_merged[Ri.label] or regions_merged[Rj.label]):
-                sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
+                #sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
+                sim=G[u][v]['weight']
                 if sim >= thr:
                     print("merging {} and {}".format(Ri.label,Rj.label))
                     merged=True
@@ -269,6 +260,7 @@ class GeST:
         print("final segmentation has {} regions".format(amax(self._segmentation_merged)))
 
     def all_merge(self,thr_pixels=250,thr=0.998,sigma=5):
+        self.contiguous()
         import time, sys
         # NOTE; labels must be a matrix-like imaeg
         begin = time.process_time()
@@ -276,7 +268,8 @@ class GeST:
         if(self._segmentation_merged is None):
             self._segmentation_merged = copy(self._segmentation)
         # initial computation, will be maintained during algorithm
-        G = graph.RAG(self._segmentation_merged,connectivity=1)
+        G = graph.rag_mean_color(self._image_lab,self._segmentation_merged,connectivity=2,mode='similarity',sigma=self._sigma)
+        #G = graph.RAG(self._segmentation_merged,connectivity=1)
 
         def _findregion(R):
             for i in range(len(regions)):
@@ -291,7 +284,8 @@ class GeST:
             for u,v in G.edges():
                 Ri=regions[_findregion(u)]
                 Rj=regions[_findregion(v)]
-                sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
+                #sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
+                sim = G[u][v]['weight']
                 if sim >= thr:
                     #print("similarity merging region {} and {}.".format(Ri.label,Rj.label))
                     max_label = Ri if Ri.label > Rj.label else Rj
@@ -405,5 +399,5 @@ class GeST:
     def merge(self,thr_pixels=250,thr=0.998,sigma=125):
         self.contiguous()
         self.merge_pixels(thr_pixels)
-        #self.merge_cosine(thr)
+        self.merge_cosine(thr)
 
