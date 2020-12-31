@@ -14,11 +14,11 @@ from gensim.models import Word2Vec
 from pymeanshift import segment
 from cv2 import imread
 from src.utils.node2vec.src import node2vec as nv
-from src.helper import _color_features, silhouette, _colors, _colors_by_region
+from src.helper import _color_features, silhouette 
 
-from numpy import asarray, unique, copy, amax, copy, argwhere, zeros
+from numpy import asarray, unique, amax, copy, argwhere, zeros
 from scipy.spatial.distance import cosine
-from networkx import contracted_nodes, draw_networkx, connected_components, is_connected
+from networkx import contracted_nodes, connected_components, is_connected
 
 class GeST:
     # TODO: describe required arguments and optional ones
@@ -37,27 +37,29 @@ class GeST:
         self._presegmentation = kwargs.get("presegmentation", None)
         self._embeddings = kwargs.get("embeddings", None)
 
+        self._docontiguous = kwargs.get("contiguous", False)
+        self._domerge = kwargs.get("merge", False)
+
         self._hs = kwargs.get("spatial_radius", 7)
         self._hr = kwargs.get("spatial_range",4.5)
         self._M = kwargs.get("min_density",50)
         self._sigma = kwargs.get("sigma",125)
         self._number_of_regions = 0
 
+        self._RAG = None
+        self._merged_RAG = None
+        self._segmentation = None
+        self._segmentation_merged = None
+        self._clustering = None
+        self._FV = None
+
         # in case no presegmentation labels are provided 
         # FIXME: offer different possibilities according to method
         if(self._presegmentation is None):
             self.compute_preseg()
 
-        self._RAG = None
-        self._merged_RAG = None
         if(self._embeddings is None):
             self.compute_embeddings()
-
-        # do we need to instantiate every class attribute?
-        self._segmentation = None
-        self._segmentation_merged = None
-        self._clustering = None
-        self._FV = None
 
     # FIXME: different computation according to method used
     def compute_preseg(self):
@@ -97,37 +99,7 @@ class GeST:
         end = time.process_time()
         print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
 
-    # TODO: "this is Algorithm 1 from the paper" + cut into functions
-    def segmentation(self):
-        import time, sys
-        import matplotlib.pyplot as plt
-
-        # NOTE: Mean is included in graph somehow?
-        begin = time.process_time() 
-        self._FV = normalize(_color_features(self._presegmentation,self._image_lab))
-        for l,v in enumerate(self._FV):
-            self._embeddings[l].extend(v)
-        end = time.process_time()
-        print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
-
-        # clustering
-        begin = time.process_time() 
-        scaler = StandardScaler()
-        data = scaler.fit_transform(self._embeddings)
-            
-        if(self._n_cluster is None):
-            self._n_cluster = min(silhouette(data,25),self._number_of_regions)
-        
-        # using agglomerative clustering to obtain segmentation 
-        clustering = AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
-        self._clustering = clustering.labels_
-        # building flat segmentation and then reshaping
-        self._segmentation=asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
-        end = time.process_time()
-        print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
-        print("final segmentation has {} regions".format(amax(self._segmentation)))
-
-    def contiguous(self):
+    def _contiguous(self):
         Gr = graph.RAG(self._presegmentation, connectivity=1)
 
         new_labels = copy(self._clustering)
@@ -150,7 +122,6 @@ class GeST:
         for l,line in enumerate(self._presegmentation):
             for j,value in enumerate(line):
                 self._segmentation[l][j] = new_labels[value-1]+1
-        print("final segmentation has {} regions".format(amax(self._segmentation)))
 
     # small regions merging --- noise removal
     def _pixels_merge(self,regions,thr_pixels=100,sigma=125):
@@ -225,7 +196,7 @@ class GeST:
                     # merging nodes in the RAG
                     G = contracted_nodes(G,R_min_label.label,R_max_label.label,self_loops=False)'''
 
-    def merge(self,thr_pixels=250,thr=0.998,sigma=5):
+    def _merge(self,thr_pixels=250,thr=0.998,sigma=5):
         import time, sys
         # NOTE; labels must be a matrix-like imaeg
         begin = time.process_time()
@@ -256,7 +227,46 @@ class GeST:
         self._segmentation_merged=(1+self._segmentation_merged).reshape(self._presegmentation.shape)
         end = time.process_time()
         print("merging procedure done in {} seconds".format(end-begin))
-        print("final segmentation has {} regions".format(amax(self._segmentation_merged)))
+
+    # TODO: "this is Algorithm 1 from the paper" + cut into functions
+    def segmentation(self):
+        import time, sys
+        import matplotlib.pyplot as plt
+
+        # NOTE: Mean is included in graph somehow?
+        begin = time.process_time() 
+        self._FV = normalize(_color_features(self._presegmentation,self._image_lab))
+        for l,v in enumerate(self._FV):
+            self._embeddings[l].extend(v)
+        end = time.process_time()
+        print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
+
+        # clustering
+        begin = time.process_time() 
+        scaler = StandardScaler()
+        data = scaler.fit_transform(self._embeddings)
+            
+        if(self._n_cluster is None):
+            self._n_cluster = min(silhouette(data,25),self._number_of_regions)
+        
+        # using agglomerative clustering to obtain segmentation 
+        clustering = AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
+        self._clustering = clustering.labels_
+        end = time.process_time()
+        print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
+
+        # building flat segmentation and then reshaping
+        self._segmentation=asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
+        self._number_of_regions = len(unique(self._segmentation))
+
+        if(self._docontiguous):
+            self._contiguous()
+            self._number_of_regions = len(unique(self._segmentation))
+        if(self._domerge):
+            # FIXME: should be parameters of __init()__
+            self._merge(thr_pixels=750,thr=0.65)
+            self._number_of_regions = len(unique(self._segmentation_merged))
+        print("final segmentation has {} regions".format(self._number_of_regions))
 
     def dev_merge(self,thr_pixels=250,thr=0.998,sigma=125):
         import time, sys
@@ -265,5 +275,4 @@ class GeST:
         self.merge_cosine(thr)
         end = time.process_time()
         print("merging procedure done in {} seconds".format(end-begin))
-        print("final segmentation has {} regions".format(amax(self._segmentation_merged)))
 

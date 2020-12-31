@@ -60,7 +60,7 @@ def _colors_by_region(N):
 
 def _savefig(segmentation=None,image=None,path=None,name=None):
     colored_regions=color.label2rgb(segmentation, image, alpha=1, colors=_colors(segmentation,image), bg_label=0)
-    io.imsave(path,img_as_ubyte(mark_boundaries(colored_regions, segmentation, mode='thick')))
+    io.imsave(path,img_as_ubyte(colored_regions))
     #colored_by_regions=color.label2rgb(segmentation, image, alpha=1, colors=_colors_by_region(numpy.amax(segmentation)), bg_label=0)
     #io.imsave(path[:-4]+"_COLORMAP"+path[-4:],img_as_ubyte(mark_boundaries(colored_by_regions, segmentation, mode='thick')))
 
