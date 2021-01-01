@@ -72,17 +72,17 @@ def _display(g, arguments):
         ax[2][1].imshow(colored_regions)
         ax[2][1].set_title('colored merged segmentation')
 
-    # ===== START DEBUG =====
-    regions = skimage.measure.regionprops(g._segmentation_merged)
-    for region in regions:
-        xy = region.centroid
-        x = xy[1]
-        y = xy[0]
-        text = ax[2][0].text(x, y, region.label,ha="center", va="center", color="w")
-    # ===== END DEBUG ===== 
+        # ===== START DEBUG =====
+        regions = skimage.measure.regionprops(g._segmentation_merged)
+        for region in regions:
+            xy = region.centroid
+            x = xy[1]
+            y = xy[0]
+            text = ax[2][0].text(x, y, region.label,ha="center", va="center", color="w")
+        # ===== END DEBUG ===== 
 
-    for a in ax.ravel():
-        a.set_axis_off()
+        for a in ax.ravel():
+            a.set_axis_off()
     
     plt.tight_layout()
     plt.show()

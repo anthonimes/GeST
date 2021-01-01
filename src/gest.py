@@ -130,7 +130,6 @@ class GeST:
                 if regions[i].label == R:
                     return i
         # trying to merge small regions to their most similar neighbors
-        # FIXME: IS IT BETTER AFTER OR BEFORE MERGING SMALL REGIONS?
         for i in range(len(regions)):
             Ri = regions[i]
             lenRi = len(Ri.coords)
