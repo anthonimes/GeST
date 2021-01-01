@@ -124,7 +124,7 @@ class GeST:
                 self._segmentation[l][j] = new_labels[value-1]+1
 
     # small regions merging --- noise removal
-    def _pixels_merge(self,regions,thr_pixels=100,sigma=125):
+    def _pixels_merge(self,regions,thr_pixels=750):
         def _findregion(R):
             for i in range(len(regions)):
                 if regions[i].label == R:
@@ -153,7 +153,7 @@ class GeST:
                 return True
         return False
 
-    def _similarity_merge(self,regions,thr=0.997,sigma=125):
+    def _similarity_merge(self,regions,thr=0.65):
         def _findregion(R):
             for i in range(len(regions)):
                 if regions[i].label == R:
@@ -196,7 +196,7 @@ class GeST:
                     # merging nodes in the RAG
                     G = contracted_nodes(G,R_min_label.label,R_max_label.label,self_loops=False)'''
 
-    def _merge(self,thr_pixels=250,thr=0.998,sigma=5):
+    def _merge(self,thr_pixels=750,thr=0.65):
         import time, sys
         # NOTE; labels must be a matrix-like imaeg
         begin = time.process_time()
