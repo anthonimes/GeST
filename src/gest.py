@@ -187,7 +187,6 @@ class GeST:
                 #max_label.label = min_label.label
                 for (x,y) in max_label.coords:
                     self._segmentation_merged[(x,y)] = min_label.label
-                merged=True
                 # updating feature vector
                 #self._FV[min_label.label-1] = (self._FV[min_label.label-1]+self._FV[max_label.label-1])/2
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
@@ -220,7 +219,6 @@ class GeST:
                 min_label = Ri if Ri.label < Rj.label else Rj
                 for (x,y) in max_label.coords:
                     self._segmentation_merged[(x,y)] = min_label.label
-                merged=True
                 #self._FV[min_label.label-1] = (self._FV[min_label.label-1]+self._FV[max_label.label-1])/2
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
                 return True
@@ -259,17 +257,11 @@ class GeST:
 
         import time, sys
         begin = time.process_time()
-        merged=True
         if(self._segmentation_merged is None):
             self._segmentation_merged = copy(self._segmentation)
         # initial computation, will be maintained during algorithm
         self._merged_RAG = graph.rag_mean_color(self._image_lab,self._segmentation_merged,connectivity=2,mode='similarity',sigma=self._sigma)
         #G = graph.RAG(self._segmentation_merged,connectivity=1)
-
-        def _findregion(R):
-            for i in range(len(regions)):
-                if regions[i].label == R:
-                    return i
 
         while(True):
             regions = measure.regionprops(self._segmentation_merged)
