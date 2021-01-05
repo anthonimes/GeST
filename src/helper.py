@@ -11,7 +11,9 @@ import numpy
 import argparse
 
 def _parse_args():    
-    # TODO: add argument for contiguity
+    """
+    Builds and returns the argument parser for GeST.
+    """
     ap=argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("-p", "--path", required=True, help="path to folder containing images")
     ap.add_argument("-m", "--method", required=False, default="msp", help="pre-segmentation method")
@@ -35,9 +37,15 @@ def _parse_args():
     return arguments
 
 def _colors(segmentation,image):
+    """
+    Compute mean color of each region of a given segmentation
+    
+    :param segmentation:
+        The segmentation to compute mean from
+    :param image:
+        The image to get pixels from
+    """
     regions=measure.regionprops(segmentation)
-    # computing masks to apply to region histograms
-    # loop over the unique segment values
     colors=[0]*len(regions)
     for index,region in enumerate(regions):
         # getting coordinates of region
@@ -52,30 +60,48 @@ def _colors(segmentation,image):
         colors[index]=(sum(R_value)/size_coords,sum(G_value)/size_coords,sum(B_value)/size_coords)
     return colors
 
-def _savepreseg(segmentation=None,image=None,path=None,name=None):
+# FIXME: not used anymore?
+#def _colors_by_region(N):
+#    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]
+
+# FIXME: merge functions and use a boolean for boundaries
+def _savepreseg(presegmentation=None,image=None,path=None):
+    """
+    Write the presegmentation to harddrive as an image with marked boundaries
+
+    :param segmentation:
+        The presegmentation to write
+    :param image:
+        The original image
+    :param path:
+        The path to write the result to
+    """
     io.imsave(path,img_as_ubyte(mark_boundaries(image,segmentation, mode='thick')))
 
-def _colors_by_region(N):
-    return [(random.random(), random.random(), random.random()) for e in range(0,256,ceil(256//N))]
+def _savefig(segmentation=None,image=None,path=None):
+    """
+    Write the presegmentation to harddrive as an image with marked boundaries
 
-def _savefig(segmentation=None,image=None,path=None,name=None):
+    :param segmentation:
+        The segmentation to write
+    :param image:
+        The original image
+    :param path:
+        The path to write the result to
+    """
     colored_regions=color.label2rgb(segmentation, image, alpha=1, colors=_colors(segmentation,image), bg_label=0)
     io.imsave(path,img_as_ubyte(colored_regions))
-    #colored_by_regions=color.label2rgb(segmentation, image, alpha=1, colors=_colors_by_region(numpy.amax(segmentation)), bg_label=0)
-    #io.imsave(path[:-4]+"_COLORMAP"+path[-4:],img_as_ubyte(mark_boundaries(colored_by_regions, segmentation, mode='thick')))
-
-def _loadlabels(filename):
-    labels=[]
-    with open(filename, "r") as f:
-        for line in f:
-            labels.append(list(map(int,line.strip().split('\t'))))
-    return numpy.asarray(labels)
-
-def _loadembeddings(path):
-    return numpy.load(path)
 
 # FIXME: is there something built-in in skimage?
 def _color_features(labels,image_lab):
+    """
+    Function that computes a feature vector for a given image and a set of segments
+
+    :param labels:
+        The segmentation to start from
+    :param image_lab:
+        The image in L*a*b* space
+    """
     regions=measure.regionprops(labels)
     number_regions=len(regions)
     mean_lab, stdev_lab=[0]*number_regions, [0]*number_regions
@@ -92,21 +118,16 @@ def _color_features(labels,image_lab):
             b_value[l]=b
         # FIXME: statistics functions are very slow: try with numpy?
         mean_lab[i]=[sum(L_value)/size_coords,sum(a_value)/size_coords,sum(b_value)/size_coords]
-
-        def variance(data):
-            n=len(data)
-            mean=sum(data) / n
-            deviations=[(x - mean) ** 2 for x in data]
-            variance=sum(deviations) / n
-            return variance
-
-        #stdev_lab[i]=[sqrt(variance(L_value)),sqrt(variance(a_value)),sqrt(variance(b_value))]
         stdev_lab[i]=[numpy.std(L_value),numpy.std(a_value),numpy.std(b_value)]
         feature_vector[i]=mean_lab[i]+stdev_lab[i]
 
     return feature_vector
 
+# FIXME: add Davies-Bouldin and Caliński-Harabasz
 def silhouette(points,kmax):
+    """
+    Function computing the number of segments that achieve the best silhouette score
+    """
     def SSE():
         sse=[]
         for k in range(2, kmax):
@@ -120,3 +141,101 @@ def silhouette(points,kmax):
     best=scores.index(max(scores))+2
     return best
 
+def _write(g,arguments):
+    """
+    Write attributes of a GeST object to hard drive
+
+    :param g:
+        The GeST object
+    :param arguments:
+        The argument parser as returned by _parse_args()
+    """
+    from networkx import write_gpickle, write_weighted_edgelist
+    from numpy import save
+    from pickle import dump
+    from os import walkdirs
+    from src.helper import _savepreseg, _savefig
+
+    _spatial_radius=float(arguments['hs']) #hs
+    _range_radius=float(arguments['hr']) #hr
+    _min_density=int(arguments['mind']) #mind
+    common=arguments['method']+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(arguments['sigma'])+"/"
+
+    path_graphs = "results/graphs/"+common
+    path_pickles = "results/pickles/"+common
+    path_labels_msp = "results/labels/"+common
+    path_labels = "results/labels/"+common
+    path_presegs = "results/presegs/"+common
+    path_embeddings = "results/embeddings/"+common
+    path_clusterings = "results/clusterings/"+common
+    path_segmentation = "results/segmentation/"+common
+
+    makedirs(path_graphs,exist_ok=True)
+    makedirs(path_pickles,exist_ok=True)
+    makedirs(path_labels,exist_ok=True)
+    makedirs(path_presegs,exist_ok=True)
+    makedirs(path_embeddings,exist_ok=True)
+    makedirs(path_clusterings,exist_ok=True)
+    makedirs(path_segmentation,exist_ok=True)
+
+    dump(g._presegmentation,open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","wb"))
+    dump(g._segmentation,open(path_labels+str(i+1)+"_"+filename[:-4]+".seg","wb"))
+    save(path_embeddings+filename[:-4]+".emb",g._embeddings)
+    write_gpickle(g._RAG, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
+    write_weighted_edgelist(g._RAG, path_graphs+filename[:-4]+".wgt", delimiter='\t')
+    _savepreseg(g._presegmentation, g._image, path_presegs+filename[:-4]+".png")
+    _savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(g._number_of_regions)+".png")
+
+def _display(g, arguments):
+    """
+    Function that plots:
+        - the initial image
+        - the presegmented image (colormap)
+        - the segmented image (colormap)
+        - the segmented image (with mean color of each region)a
+        - the merged image (colormap ---if appropriate)
+        - the merged image (with mean color of each region ---if appropriate)
+    """
+    from skimage import color
+    from skimage import measure
+    from matplotlib import pyplot as plt
+    from src.helper import _colors
+
+    if(arguments['merge']):
+        fig, ax = plt.subplots(3, 2, figsize=(12, 8), sharex=True, sharey=True)
+    else:
+        fig, ax = plt.subplots(2, 2, figsize=(12, 8), sharex=True, sharey=True)
+
+    ax[0][0].imshow(g._image)
+    ax[0][0].set_title("initial image")
+    ax[0][1].imshow(g._presegmentation)
+    ax[0][1].set_title("initial segmentation")
+        
+    colored_regions = color.label2rgb(g._segmentation, g._image, alpha=1, colors=_colors(g._segmentation,g._image), bg_label=0)
+    ax[1][0].imshow(g._segmentation)
+    ax[1][0].set_title('final segmentation')
+    colored_regions = color.label2rgb(g._segmentation, g._image, alpha=1, colors=_colors(g._segmentation,g._image), bg_label=0)
+    ax[1][1].imshow(colored_regions)
+    ax[1][1].set_title('colored final segmentation')
+
+    if(arguments['merge']):
+        ax[2][0].imshow(g._segmentation_merged)
+        ax[2][0].set_title('merged segmentation')
+        colored_regions = color.label2rgb(g._segmentation_merged, g._image, alpha=1, colors=_colors(g._segmentation_merged,g._image), bg_label=0)
+        ax[2][1].imshow(colored_regions)
+        ax[2][1].set_title('colored merged segmentation')
+
+        # ===== START DEV =====
+        regions = measure.regionprops(g._segmentation_merged)
+        for region in regions:
+            xy = region.centroid
+            x = xy[1]
+            y = xy[0]
+            text = ax[2][0].text(x, y, region.label,ha="center", va="center", color="w")
+        # ===== END DEV ===== 
+
+        for a in ax.ravel():
+            a.set_axis_off()
+    
+    plt.tight_layout()
+    plt.show()

@@ -1,4 +1,3 @@
-# FIXME: use local imports instead
 from skimage import io, color, measure
 from skimage.future import graph
 from skimage.util import img_as_float
@@ -21,18 +20,41 @@ from scipy.spatial.distance import cosine
 from networkx import contracted_nodes, connected_components, is_connected
 
 class GeST:
-    # TODO: describe required arguments and optional ones
-    def __init__(self, *args, **kwargs):
-        # path to image
-        self._path_to_image = args[0]
-        self._n_cluster = args[1]
+    """
+    GeST object. Example:
+        
+        g = GeST('examples/86068.jpg', 24)
+        g.segmentation()
+
+    :param path_to_image:
+        The (relative or absolute) path to the image to segment.
+    :type first: ``str``
+    :param n_cluster:
+        The number of segments needed. If None, will be computed automatically. 
+    :type second: ``int``
+    :param \**kwargs:
+        See below
+
+    :Keywords arguments:
+        * *preseg_method* (``str``) --
+            Presegmentation method. Currently supported : MeanShift (``MS``).
+        * *presegmentation* (``matrix``) -- 
+            Initial presegmentation: matrix-like structure where each pixel is assigned to a given segment. 
+            Labels of segments must range from 1 to the number of segments.
+        * *embeddings* (``matrix``) -- 
+            Initial embeddings computed from the RAG associated to the presegmentation. 
+            The matrix must be nxd where ``n`` is the number of segments of the presegmentation, and ``d`` the dimension of the embeddings.
+    """
+        
+    def __init__(self, path_to_image=None, n_cluster=None, **kwargs):
+        self._path_to_image = path_to_image
+        self._n_cluster = n_cluster
 
         # L*a*b* image
         self._image = io.imread(self._path_to_image)
         self._image = img_as_float(self._image)
         self._image_lab = (color.rgb2lab(self._image) + [0,128,128]) #// [1,1,1]
 
-        # TODO: allow for external classes to deal with initial preseg
         self._preseg_method = kwargs.get("preseg_method", "MS")
         self._presegmentation = kwargs.get("presegmentation", None)
         self._embeddings = kwargs.get("embeddings", None)
@@ -53,16 +75,20 @@ class GeST:
         self._clustering = None
         self._FV = None
 
-        # in case no presegmentation labels are provided 
-        # FIXME: offer different possibilities according to method
+        # if no presegmentation labels are provided 
+        # TODO: offer different possibilities according to method
         if(self._presegmentation is None):
             self.compute_preseg()
 
+        # if no embeddings are provided
         if(self._embeddings is None):
             self.compute_embeddings()
 
     # FIXME: different computation according to method used
     def compute_preseg(self):
+        """
+        Compute the initial presegmentation using ``preseg_method``
+        """
         import time, sys
         begin = time.process_time()
         ms_image = imread(self._path_to_image)
@@ -73,9 +99,13 @@ class GeST:
         print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
 
     def compute_embeddings(self):
+        """
+        Compute the RAG and embeddings from the initial presegmentation
+        """
         import time, sys
-        # computing RAG
         
+        # computing RAG
+        # TODO: add exception/error if _presegmentation is None
         begin = time.process_time() 
         self._RAG = graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
         end = time.process_time()
@@ -86,12 +116,10 @@ class GeST:
         Gn2v = nv.Graph(self._RAG, False, 2, .5)
         Gn2v.preprocess_transition_probs()
         walks = Gn2v.simulate_walks(20, 20)
-        # learn embeddings by optimizing the Skipgram objective using SGD.
         walks = [list(map(str, walk)) for walk in walks]
         # FIXME: allow parameterization
         model = Word2Vec(walks, size=16, window=5, min_count=0, sg=1, workers=4, iter=1)
 
-        # getting the embeddings
         begin = time.process_time() 
         representation = model.wv
         nodes=self._RAG.nodes()
@@ -100,6 +128,10 @@ class GeST:
         print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
 
     def _contiguous(self):
+        """
+        (Private) Procedure that produce a contiguous set of segments. By default clustering on embeddings may provide 
+        segments that are far apart within the image. 
+        """
         Gr = graph.RAG(self._presegmentation, connectivity=1)
 
         new_labels = copy(self._clustering)
@@ -118,17 +150,26 @@ class GeST:
                     labelcpt+=1
 
         self._clustering = new_labels
-        # computing corresponding new segmentation
         for l,line in enumerate(self._presegmentation):
             for j,value in enumerate(line):
                 self._segmentation[l][j] = new_labels[value-1]+1
 
     # small regions merging --- noise removal
     def _pixels_merge(self,regions,thr_pixels=750):
+        """
+        (Private) Procedure that merge small segments with their closest neighbor.
+
+        :param regions:
+            The properties of the initially computed regions.
+        :param thr_pixels:
+            The threshold size for merging.
+        """
+
         def _findregion(R):
             for i in range(len(regions)):
                 if regions[i].label == R:
                     return i
+
         # trying to merge small regions to their most similar neighbors
         # FIXME: IS IT BETTER AFTER OR BEFORE MERGING SMALL REGIONS?
         for i in range(len(regions)):
@@ -154,6 +195,15 @@ class GeST:
         return False
 
     def _similarity_merge(self,regions,thr=0.65):
+        """
+        (Private) Procedure that merge similar segments 
+
+        :param regions:
+            The properties of the initially computed regions.
+        :param thr:
+            The threshold for merging. This value depends on the distance considered. 
+        """
+
         def _findregion(R):
             for i in range(len(regions)):
                 if regions[i].label == R:
@@ -197,8 +247,17 @@ class GeST:
                     G = contracted_nodes(G,R_min_label.label,R_max_label.label,self_loops=False)'''
 
     def _merge(self,thr_pixels=750,thr=0.65):
+        """
+        (Private) Procedure that merge while possible. First pixels, then similarity. 
+        This is Algorithm 2 from GeSt: a new image segmentation technique based on graph embedding.
+        
+        :param thr_pixels:
+            The threshold size for merging.
+        :param thr:
+            The threshold for merging. This value depends on the distance considered. 
+        """
+
         import time, sys
-        # NOTE; labels must be a matrix-like imaeg
         begin = time.process_time()
         merged=True
         if(self._segmentation_merged is None):
@@ -214,7 +273,6 @@ class GeST:
 
         while(True):
             regions = measure.regionprops(self._segmentation_merged)
-            # FIXME: totally useless to compute again the ones that have not changed
             merged = self._similarity_merge(regions,thr)
             if(merged):
                 continue
@@ -228,8 +286,11 @@ class GeST:
         end = time.process_time()
         print("merging procedure done in {} seconds".format(end-begin))
 
-    # TODO: "this is Algorithm 1 from the paper" + cut into functions
     def segmentation(self):
+        """
+        Member method that implements Algorithm 1 of the paper GeSt: a new image segmentation technique based on graph embedding.
+        """
+
         import time, sys
         import matplotlib.pyplot as plt
 

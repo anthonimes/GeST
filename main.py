@@ -1,114 +1,44 @@
-def _write(g,arguments):
-    from networkx import write_gpickle, write_weighted_edgelist
-    from numpy import save
-    from pickle import dump
-    from os import walkdirs
-    from src.helper import _savepreseg, _savefig
+"""
+main.py: example for using GeST
+A description of required and optional arguments can be found using python3 main.py -h
+For completeness, the output of this command is provided below: 
+    usage: main.py [-h] -p PATH [-m METHOD] [--sigma SIGMA] [-n NCLUSTERS] [--silhouette] [--hs HS] [--hr HR] [--mind MIND] [--merge] [--contiguous] [-s]
 
-    _spatial_radius=float(arguments['hs']) #hs
-    _range_radius=float(arguments['hr']) #hr
-    _min_density=int(arguments['mind']) #mind
-    common=arguments['method']+"_"+str(_spatial_radius)+"_"+str(_range_radius)+"_"+str(_min_density)+"_SIGMA_"+str(arguments['sigma'])+"/"
+    optional arguments:
+      -h, --help            show this help message and exit
+      -p PATH, --path PATH  path to folder containing images (default: None)
+      -m METHOD, --method METHOD
+                            pre-segmentation method (default: msp)
+      --sigma SIGMA         kernel parameter (default: 125)
+      -n NCLUSTERS, --nclusters NCLUSTERS
+                            number of clusters (default: 21)
+      --silhouette          use silhouette method instead of fixed number of clusters (default: False)
+      --hs HS               spatial radius (default: 7)
+      --hr HR               range radius (default: 4.5)
+      --mind MIND           min density (default: 50)
+      --merge               apply merging procedure (default: False)
+      --contiguous          compute contiguous regions (default: False)
+      -s, --save            save files to hard drive (default: False)
+"""
+from os import walk
+from src.helper import _parse_args, _write, _display
+from src.gest import GeST
 
-    path_graphs = "results/graphs/"+common
-    path_pickles = "results/pickles/"+common
-    path_labels_msp = "results/labels/"+common
-    path_labels = "results/labels/"+common
-    path_presegs = "results/presegs/"+common
-    path_embeddings = "results/embeddings/"+common
-    path_clusterings = "results/clusterings/"+common
-    path_segmentation = "results/segmentation/"+common
+import warnings
+warnings.filterwarnings("ignore")
 
-    makedirs(path_graphs,exist_ok=True)
-    makedirs(path_pickles,exist_ok=True)
-    makedirs(path_labels,exist_ok=True)
-    makedirs(path_presegs,exist_ok=True)
-    makedirs(path_embeddings,exist_ok=True)
-    makedirs(path_clusterings,exist_ok=True)
-    makedirs(path_segmentation,exist_ok=True)
+arguments = _parse_args()
 
-    dump(g._presegmentation,open(path_labels+str(i+1)+"_"+filename[:-4]+".preseg","wb"))
-    dump(g._segmentation,open(path_labels+str(i+1)+"_"+filename[:-4]+".seg","wb"))
-    save(path_embeddings+filename[:-4]+".emb",g._embeddings)
-    write_gpickle(g._RAG, path_pickles+str(i+1)+"_"+filename[:-4]+".pkl")
-    write_weighted_edgelist(g._RAG, path_graphs+filename[:-4]+".wgt", delimiter='\t')
-    _savepreseg(g._presegmentation, g._image, path_presegs+filename[:-4]+".png")
-    _savefig(g._segmentation, g._image, path_segmentation+str(i+1)+"_"+filename[:-4]+"_"+str(g._number_of_regions)+".png")
+dirpath,_,images = list(walk(arguments['path']))[0]
 
-def _display(g, arguments):
-    from skimage import color
-    from skimage import measure
-    from matplotlib import pyplot as plt
-    from src.helper import _colors
+for i,filename in enumerate(sorted(images)):
+    print("===== processing image {}".format(filename))
 
-    if(arguments['merge']):
-        fig, ax = plt.subplots(3, 2, figsize=(12, 8), sharex=True, sharey=True)
-    else:
-        fig, ax = plt.subplots(2, 2, figsize=(12, 8), sharex=True, sharey=True)
-
-    ax[0][0].imshow(g._image)
-    ax[0][0].set_title("initial image")
-    ax[0][1].imshow(g._presegmentation)
-    ax[0][1].set_title("initial segmentation")
-        
-    colored_regions = color.label2rgb(g._segmentation, g._image, alpha=1, colors=_colors(g._segmentation,g._image), bg_label=0)
-    ax[1][0].imshow(g._segmentation)
-    ax[1][0].set_title('final segmentation')
-    colored_regions = color.label2rgb(g._segmentation, g._image, alpha=1, colors=_colors(g._segmentation,g._image), bg_label=0)
-    ax[1][1].imshow(colored_regions)
-    ax[1][1].set_title('colored final segmentation')
-
-    if(arguments['merge']):
-        ax[2][0].imshow(g._segmentation_merged)
-        ax[2][0].set_title('merged segmentation')
-        colored_regions = color.label2rgb(g._segmentation_merged, g._image, alpha=1, colors=_colors(g._segmentation_merged,g._image), bg_label=0)
-        ax[2][1].imshow(colored_regions)
-        ax[2][1].set_title('colored merged segmentation')
-
-        # ===== START DEBUG =====
-        regions = measure.regionprops(g._segmentation_merged)
-        for region in regions:
-            xy = region.centroid
-            x = xy[1]
-            y = xy[0]
-            text = ax[2][0].text(x, y, region.label,ha="center", va="center", color="w")
-        # ===== END DEBUG ===== 
-
-        for a in ax.ravel():
-            a.set_axis_off()
+    g = GeST(dirpath+filename, arguments['n_cluster'], preseg_method=arguments['method'],merge=arguments['merge'],contiguous=arguments['contiguous'])
+    g.segmentation()
     
-    plt.tight_layout()
-    plt.show()
-
-if __name__ == "__main__":
-    from os import walk
-    from src.helper import _parse_args
-    import warnings
-    warnings.filterwarnings("ignore")
-    import src.gest
-
-    # construct the argument parser and parse the arguments
-    # common arguments
-    # TODO: should maybe return the GeST instance?
-    arguments = _parse_args()
-
-    # meanshift arguments
-    _spatial_radius=float(arguments['hs']) #hs
-    _range_radius=float(arguments['hr']) #hr
-    _min_density=int(arguments['mind']) #mind
-    n_cluster = arguments['n_cluster']
-
-    # TODO: allow for a single image as well
-    dirpath,_,images = list(walk(arguments['path']))[0]
-
-    for i,filename in enumerate(sorted(images)):
-        print("===== processing image {}".format(filename))
-
-        g = src.gest.GeST(dirpath+filename, n_cluster, preseg_method=arguments['method'],merge=arguments['merge'],contiguous=arguments['contiguous'])
-        g.segmentation()
-        
-        # writing to hard drive or displaying with matplotlib
-        if(arguments['save']): 
-            _write(g,arguments)
-        else:
-            _display(g,arguments)
+    # writing to hard drive or displaying with matplotlib
+    if(arguments['save']): 
+        _write(g,arguments)
+    else:
+        _display(g,arguments)
