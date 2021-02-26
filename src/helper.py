@@ -1,4 +1,4 @@
-from skimage import io,color,measure,img_as_ubyte
+from skimage import io,color,measure,img_as_ubyte, future
 from skimage.segmentation import mark_boundaries
 
 from math import sqrt, ceil
