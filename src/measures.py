@@ -1,3 +1,6 @@
+from scipy.special import comb
+import numpy
+
 def _f_measure(labels_ground_truth, labels_prediction):
     # tp = true positive, tn: true negative, fp: false positive, fn: false negative
     # number of pairs in the same set in ground truth

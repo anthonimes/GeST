@@ -1,8 +1,9 @@
 from skimage import io, color, measure
 from skimage.future import graph
-from skimage.util import img_as_float
+from skimage.util import img_as_float, img_as_int
+from skimage.color import rgb2gray
 
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, KMeans
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import normalize
@@ -13,11 +14,16 @@ from gensim.models import Word2Vec
 from pymeanshift import segment
 from cv2 import imread
 from src.utils.node2vec.src import node2vec as nv
-from src.helper import _color_features, silhouette 
+from src.helper import _color_features, silhouette, _hog_channel_gradient, _get_bins, _normalized_hog
 
-from numpy import asarray, unique, amax, copy, argwhere, zeros
+from numpy import asarray, unique, amax, copy, argwhere, zeros, where, amin
 from scipy.spatial.distance import cosine
 from networkx import contracted_nodes, connected_components, is_connected
+from math import sqrt
+
+
+# ---DEV---
+from sklearn.decomposition import PCA
 
 class GeST:
     """
@@ -50,6 +56,9 @@ class GeST:
         self._path_to_image = path_to_image
         self._n_cluster = n_cluster
 
+        # RGB image
+        self._image_rgb = io.imread(self._path_to_image)
+
         # L*a*b* image
         self._image = io.imread(self._path_to_image)
         self._image = img_as_float(self._image)
@@ -58,31 +67,48 @@ class GeST:
         self._preseg_method = kwargs.get("preseg_method", "MS")
         self._presegmentation = kwargs.get("presegmentation", None)
         self._embeddings = kwargs.get("embeddings", None)
+        self._dimensions = kwargs.get("dimensions", 16)
 
         self._docontiguous = kwargs.get("contiguous", False)
         self._domerge = kwargs.get("merge", False)
+        self._verbose = kwargs.get("verbose", False)
 
         self._hs = kwargs.get("spatial_radius", 7)
         self._hr = kwargs.get("spatial_range",4.5)
         self._M = kwargs.get("min_density",50)
         self._sigma = kwargs.get("sigma",125)
+        self._thr_pixels = kwargs.get("thr_pixels",250)
+        self._thr_cosine = kwargs.get("thr_cosine",0.998)
         self._number_of_regions = 0
 
         self._RAG = None
         self._merged_RAG = None
+        self._feature_vector = None
+        self._feature_vector_merge = None
+        self._hog = None
+        self._bins = None
         self._segmentation = None
         self._segmentation_merged = None
         self._clustering = None
-        self._FV = None
+        self._print = print if self._verbose else lambda *a, **k: None
 
         # if no presegmentation labels are provided 
         # TODO: offer different possibilities according to method
         if(self._presegmentation is None):
             self.compute_preseg()
+            #self._n_cluster = min(self._n_cluster, self._number_of_regions)
+
+        self._feature_vector = asarray(_color_features(self._presegmentation,self._image_lab,self._image_rgb))
+        # ---DEV--- use image_lab not image!!! IF BAD, USE img_as_float
+        #self._hog = _hog_channel_gradient(rgb2gray(self._image),multichannel=False)
+        self._hog = _hog_channel_gradient(self._image_lab,multichannel=True)
+        #self._hog = _hog_channel_gradient(self._image_rgb,multichannel=True)
+        self._bins = _get_bins(self._hog[0], self._hog[1], measure.regionprops(self._presegmentation,intensity_image=rgb2gray(self._image)))
+        regions = measure.regionprops(self._presegmentation)
 
         # if no embeddings are provided
         if(self._embeddings is None):
-            self.compute_embeddings()
+            self.compute_embeddings(regions)
 
     # FIXME: different computation according to method used
     def compute_preseg(self):
@@ -96,9 +122,9 @@ class GeST:
         (_, labels, self._number_of_regions) = segment(ms_image, spatial_radius=self._hs, range_radius=self._hr, min_density=self._M)
         self._presegmentation = 1+labels
         end = time.process_time()
-        print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
+        self._print("presegmentation computed in {} seconds".format(end-begin), file=sys.stderr)
 
-    def compute_embeddings(self):
+    def compute_embeddings(self,regions):
         """
         Compute the RAG and embeddings from the initial presegmentation
         """
@@ -107,9 +133,28 @@ class GeST:
         # computing RAG
         # TODO: add exception/error if _presegmentation is None
         begin = time.process_time() 
+        # ---DEV--- do not use rag_mean_color, just RAG, and then weight edges according to color AND texture (see whatever paper)
+        #self._RAG = graph.RAG(self._image_lab, self._presegmentation, connectivity=2)
         self._RAG = graph.rag_mean_color(self._image_lab,self._presegmentation,connectivity=2,mode='similarity',sigma=self._sigma)
+        # ---DEV--- try with unnormalized bins of each region (_get_bins)
+        # ---DEV--- DO NOT INCLUDE HOG FOR CLUSTERING
+        # weighting the graph
+        '''def _findregion(R):
+            for i in range(len(regions)):
+                if regions[i].label == R:
+                    return i
+
+        for u,v in self._RAG.edges():
+            Ru = regions[_findregion(u)]
+            Rv = regions[_findregion(v)]
+            HOGu = [self._bins[Ru.label-1][j][0]/self._bins[Ru.label-1][j][1] for j in range(9)]
+            HOGv = [self._bins[Rv.label-1][j][0]/self._bins[Rv.label-1][j][1] for j in range(9)]
+            tuv = (1-cosine(HOGu,HOGv))
+            cuv = self._RAG[u][v]['weight']
+            self._RAG[u][v]['weight'] = (0.4 * sqrt(tuv*cuv)) + (0.6 * cuv)
+        # ---DEV---
         end = time.process_time()
-        print("RAG computed in {} seconds".format(end-begin), file=sys.stderr)
+        self._print("RAG computed in {} seconds".format(end-begin), file=sys.stderr)'''
 
         # computing embeddings
         begin = time.process_time() 
@@ -118,14 +163,14 @@ class GeST:
         walks = Gn2v.simulate_walks(20, 20)
         walks = [list(map(str, walk)) for walk in walks]
         # FIXME: allow parameterization
-        model = Word2Vec(walks, size=16, window=5, min_count=0, sg=1, workers=4, iter=1)
+        model = Word2Vec(walks, size=self._dimensions, window=5, min_count=0, sg=1, workers=4, iter=1)
 
         begin = time.process_time() 
         representation = model.wv
         nodes=self._RAG.nodes()
         self._embeddings = [representation.get_vector(str(node)).tolist() for node in nodes]
         end = time.process_time()
-        print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
+        self._print("embeddings computed in {} seconds".format(end-begin), file=sys.stderr)
 
     def _contiguous(self):
         """
@@ -154,11 +199,10 @@ class GeST:
             for j,value in enumerate(line):
                 self._segmentation[l][j] = new_labels[value-1]+1
 
-    # small regions merging --- noise removal
+        # small regions merging --- noise removal
     def _pixels_merge(self,regions,thr_pixels=750):
         """
         (Private) Procedure that merge small segments with their closest neighbor.
-
         :param regions:
             The properties of the initially computed regions.
         :param thr_pixels:
@@ -170,33 +214,37 @@ class GeST:
                 if regions[i].label == R:
                     return i
 
-        # trying to merge small regions to their most similar neighbors
-        # FIXME: IS IT BETTER AFTER OR BEFORE MERGING SMALL REGIONS?
+        # we construct the feature vector of L*a*b* space + HOG features
+        for_cosine = [ [0]*6 for _ in range(max([region.label for region in regions])) ]
+        for region in regions:
+            # getting the percentage of orientation bins for every region
+            FV = self._feature_vector_merge[region.label-1].tolist()
+            HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
+            for_cosine[region.label-1] = FV#+HOG
+        # ---DEV--- try with this
+        for_cosine = normalize(asarray(for_cosine))
+
         for i in range(len(regions)):
             Ri = regions[i]
             lenRi = len(Ri.coords)
             if(lenRi < thr_pixels):
-                # WARNING: neighbors in graphs are labels, not indices of regions array!
                 neighbors = list(self._merged_RAG.neighbors(Ri.label))
-                closest = max([(regions[_findregion(Rj)].label,self._merged_RAG[Ri.label][regions[_findregion(Rj)].label]['weight']) for Rj in neighbors], key=lambda x: x[1])[0]
-                #closest = max([(regions[_findregion(Rj)].label,1-cosine(self._FV[Ri.label-1],self._FV[regions[_findregion(Rj)].label-1])) for Rj in neighbors],key=lambda x: x[1])[0]
+                closest = max([(regions[_findregion(Rj)].label,1-cosine(for_cosine[Ri.label-1],for_cosine[regions[_findregion(Rj)].label-1])) for Rj in neighbors],key=lambda x: x[1])[0]
+                #closest = max([(regions[_findregion(Rj)].label,self._merged_RAG[Ri.label][regions[_findregion(Rj)].label]['weight']) for Rj in neighbors], key=lambda x: x[1])[0]
                 Rj = regions[_findregion(closest)]
                 max_label = Ri if Ri.label > Rj.label else Rj
                 min_label = Ri if Ri.label < Rj.label else Rj
-                # could this actually be enough?
-                #max_label.label = min_label.label
                 for (x,y) in max_label.coords:
                     self._segmentation_merged[(x,y)] = min_label.label
-                # updating feature vector
-                #self._FV[min_label.label-1] = (self._FV[min_label.label-1]+self._FV[max_label.label-1])/2
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
+                self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
+                self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
                 return True
         return False
 
     def _similarity_merge(self,regions,thr=0.65):
         """
         (Private) Procedure that merge similar segments 
-
         :param regions:
             The properties of the initially computed regions.
         :param thr:
@@ -208,43 +256,53 @@ class GeST:
                 if regions[i].label == R:
                     return i
 
+        # we construct the feature vector of L*a*b* space + HOG features
+        for_cosine = [ [0]*6 for _ in range(max([region.label for region in regions])) ]
+        for region in regions:
+            # getting the percentage of orientation bins for every region
+            FV = self._feature_vector_merge[region.label-1].tolist()
+            HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
+            for_cosine[region.label-1] = FV#+HOG
+        # ---DEV--- try with this first
+        for_cosine = normalize(asarray(for_cosine))
+
         for u,v in self._merged_RAG.edges():
             Ri=regions[_findregion(u)]
             Rj=regions[_findregion(v)]
-            #sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
-            sim = self._merged_RAG[u][v]['weight']
+            sim=1-cosine(for_cosine[Ri.label-1],for_cosine[Rj.label-1])
             if sim >= thr:
-                #print("similarity merging region {} and {}.".format(Ri.label,Rj.label))
                 max_label = Ri if Ri.label > Rj.label else Rj
                 min_label = Ri if Ri.label < Rj.label else Rj
                 for (x,y) in max_label.coords:
                     self._segmentation_merged[(x,y)] = min_label.label
-                #self._FV[min_label.label-1] = (self._FV[min_label.label-1]+self._FV[max_label.label-1])/2
+                # updating remaining labels
+                #_, labels_merge = unique(labels_merge,return_inverse=1)
+                #labels_merge=(1+labels_merge).reshape(labels.shape)
+                # updating feature vector
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
+                self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
+                self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
                 return True
         return False
-        
-        '''regions_merged = [False]*(len(regions)+1)
-        for u,v in G.edges():
-            Ri=self._findregion(u,regions)
-            Rj=self._findregion(v,regions)
-            if not(regions_merged[Ri.label] or regions_merged[Rj.label]):
-                #sim=1-cosine(self._FV[Ri.label-1],self._FV[Rj.label-1])
-                sim=G[u][v]['weight']
-                if sim >= thr:
-                    #print("similarity merging region {} and {}.".format(Ri.label,Rj.label))
-                    R_max_label = Ri if Ri.label > Rj.label else Rj
-                    R_min_label = Ri if Ri.label < Rj.label else Rj
-                    regions_merged[R_max_label.label]=True
-                    regions_merged[R_min_label.label]=True
-                    for (x,y) in R_max_label.coords:
-                        self._segmentation_merged[(x,y)] = R_min_label.label
-                    # updating feature vector
-                    #self._FV[R_min_label.label-1] = (self._FV[R_min_label.label-1]+self._FV[R_max_label.label-1])/2
-                    # merging nodes in the RAG
-                    G = contracted_nodes(G,R_min_label.label,R_max_label.label,self_loops=False)'''
 
-    def _merge(self,thr_pixels=750,thr=0.65):
+        '''for u,v in self._merged_RAG.edges():
+            Ri=regions[_findregion(u)]
+            Rj=regions[_findregion(v)]
+            sim = self._merged_RAG[u][v]['weight']
+            if sim >= thr:
+                max_label = Ri if Ri.label > Rj.label else Rj
+                min_label = Ri if Ri.label < Rj.label else Rj
+                for (x,y) in max_label.coords:
+                    self._segmentation_merged[(x,y)] = min_label.label
+                self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
+                return True
+        return False'''
+
+    # ---DEV---
+    # custom weights for graph
+    # ---DEV---
+
+    def _merge(self,thr_pixels=750,thr=0.995):
         """
         (Private) Procedure that merge while possible. First pixels, then similarity. 
         This is Algorithm 2 from GeSt: a new image segmentation technique based on graph embedding.
@@ -255,15 +313,23 @@ class GeST:
             The threshold for merging. This value depends on the distance considered. 
         """
 
-        import time, sys
-        begin = time.process_time()
         if(self._segmentation_merged is None):
             self._segmentation_merged = copy(self._segmentation)
         # initial computation, will be maintained during algorithm
-        self._merged_RAG = graph.rag_mean_color(self._image_lab,self._segmentation_merged,connectivity=2,mode='similarity',sigma=self._sigma)
-        #G = graph.RAG(self._segmentation_merged,connectivity=1)
+        # ---DEV--- try different graphs and different parameters
+        # ---DEV--- add a function to compute a graph with custom weights!
+        # ---DEV--- feature_vector must be an attribute, computed once and then updated!
+        self._merged_RAG = graph.RAG(self._segmentation_merged,connectivity=1)
+        #self._merged_RAG = graph.rag_mean_color(self._image_lab,self._segmentation_merged,connectivity=2,mode='similarity',sigma=self._sigma)
+
+        # initializing feature vector --- L*a*b* space
+        self._feature_vector_merge = asarray(_color_features(self._segmentation_merged,self._image_lab,self._image_rgb))
+        # ---DEV--- use hog on grayscale here? I DO NOT REALLY SEE WHY...
+        self._bins = asarray(_get_bins(self._hog[0],self._hog[1],measure.regionprops(self._segmentation_merged)))
+        #self._bins = asarray(_get_bins(measure.regionprops(self._segmentation_merged,intensity_image=rgb2gray(self._image))))
 
         while(True):
+            # ---DEV--- if this does not work properly, then relabel regions AT EACH STEP (see ---CMT---)
             regions = measure.regionprops(self._segmentation_merged)
             merged = self._similarity_merge(regions,thr)
             if(merged):
@@ -273,11 +339,12 @@ class GeST:
                 continue
             break
 
+        # ---CMT--- this assures that labels are contiguous from 1 to N!
+        # ---CMT--- we get the *indices* of the unique values, 
         _, self._segmentation_merged = unique(self._segmentation_merged,return_inverse=1)
         self._segmentation_merged=(1+self._segmentation_merged).reshape(self._presegmentation.shape)
-        end = time.process_time()
-        print("merging procedure done in {} seconds".format(end-begin))
 
+    # TODO : verbose print!
     def segmentation(self):
         """
         Member method that implements Algorithm 1 of the paper GeSt: a new image segmentation technique based on graph embedding.
@@ -288,38 +355,67 @@ class GeST:
 
         # NOTE: Mean is included in graph somehow?
         begin = time.process_time() 
-        self._FV = normalize(_color_features(self._presegmentation,self._image_lab))
-        for l,v in enumerate(self._FV):
+        # ---DEV--- 
+        # to try with just feature vector
+        # self._embeddings = [ list() for _ in range(len(self._feature_vector)) ]
+        # ---DEV---
+        for l,v in enumerate(self._feature_vector):
+            # --- FV ONLY ---
             self._embeddings[l].extend(v)
+            # --- FV+HOG ---
+            # ----DEV--- add also RGB HOG? (try with only this one first ?!)
+            self._embeddings[l].extend([self._bins[l][j][0]/self._bins[l][j][1] for j in range(9)])
         end = time.process_time()
-        print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
+        self._print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # clustering
         begin = time.process_time() 
         scaler = StandardScaler()
         data = scaler.fit_transform(self._embeddings)
+
+        '''pca = PCA()
+        data = pca.fit_transform(data)
+        pca_variance = pca.explained_variance_
+        plt.figure(figsize=(8, 6))
+        plt.bar(range(pca_variance.shape[0]), pca_variance, alpha=0.5, align='center', label='individual variance')
+        plt.legend()
+        plt.ylabel('Variance ratio')
+        plt.xlabel('Principal components')
+        plt.show()'''
             
+        # we keep only eigenvalues > 1: Kaiser's criterion
+        pca = PCA()
+        data = pca.fit_transform(data)
+        pca_variance = pca.explained_variance_
+        n_components = len([e for e in pca.explained_variance_ if e >= 1])
+        pca = PCA(n_components=n_components)
+        data = pca.fit_transform(data)
+
         if(self._n_cluster is None):
             self._n_cluster = min(silhouette(data,25),self._number_of_regions)
         
         # using agglomerative clustering to obtain segmentation 
-        clustering = AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None).fit(data)
+        # ---DEV--- bringing back k-means!
+        #clustering = KMeans(init = "k-means++", n_clusters = self._n_cluster, n_init = 35, random_state=10)
+        clustering = AgglomerativeClustering(n_clusters=self._n_cluster,affinity='cosine',linkage='average',distance_threshold=None)
+        clustering.fit(data)
         self._clustering = clustering.labels_
         end = time.process_time()
-        print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
+        self._print("clustering computed in {} seconds".format(end-begin), file=sys.stderr)
 
         # building flat segmentation and then reshaping
         self._segmentation=asarray([self._clustering[value-1]+1 for line in self._presegmentation for value in line]).reshape(self._presegmentation.shape)
-        self._number_of_regions = len(unique(self._segmentation))
 
         if(self._docontiguous):
             self._contiguous()
-            self._number_of_regions = len(unique(self._segmentation))
         if(self._domerge):
-            # FIXME: should be parameters of __init()__
-            self._merge(thr_pixels=750,thr=0.65)
-            self._number_of_regions = len(unique(self._segmentation_merged))
-        print("final segmentation has {} regions".format(self._number_of_regions))
+            self._merge(thr_pixels=self._thr_pixels,thr=self._thr_cosine)
+            #self.dev_merge(thr_pixels=self._thr_pixels,thr=self._thr_cosine)
+        if(not(self._docontiguous)):
+                pass
+                # add a bit of code to produce contiguous regions, just in case
+        self._number_of_regions = len(unique(self._segmentation))
+        self._print("final segmentation has {} regions".format(self._number_of_regions))
 
     def dev_merge(self,thr_pixels=250,thr=0.998,sigma=125):
         import time, sys
@@ -327,5 +423,15 @@ class GeST:
         self.merge_pixels(thr_pixels)
         self.merge_cosine(thr)
         end = time.process_time()
-        print("merging procedure done in {} seconds".format(end-begin))
+        self._print("merging procedure done in {} seconds".format(end-begin))
 
+    def compare(self,path_groundtruths,filename):
+        from src.helper import _get_groundtruth
+        from src.measures import _probabilistic_rand_index
+        gt_boundaries, gt_segmentation = _get_groundtruth(path_groundtruths+filename[:-4]+".mat")
+        pri = _probabilistic_rand_index(gt_segmentation,self._segmentation)
+        if(self._domerge):
+            pri_merged = _probabilistic_rand_index(gt_segmentation,self._segmentation_merged)
+        else:
+            pri_merged = 0
+        return pri, pri_merged
