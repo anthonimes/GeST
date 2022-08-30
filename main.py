@@ -61,16 +61,16 @@ if(arguments['contiguous']):
     # ---DEV--- merging small regions on contiguous seems bad!
     pixels=[0]#50,150,250,350]
 else:
-    pixels=[0]#250,750,1000,1250]
+    pixels=[750]#250,750,1000,1250]
 
 cosine=[0.998]
-dimensions = [4,8,16,32,64,128]
+dimensions = [16,32]
 
 for d in dimensions:
     for thr_pixels in pixels:
         for thr_cosine in cosine:
             PRI,PRI_CONTIGUOUS,PRI_MERGED,PRI_CONTIGUOUS_MERGED,BEST_PRI,SELECTED_PRI  = [], [], [], [], [], []
-            for i in range(5):
+            for i in range(1):
                 # ---DEV--- replace by lists (but OK since small dataset)
                 best_pri, selected_pri, mean_pri, mean_pri_merged, mean_pri_contiguous, mean_pri_contiguous_merged = dict(), dict(), dict(), dict(), dict(), dict()
                 #for i,filename in enumerate(sorted(images)):
@@ -86,7 +86,7 @@ for d in dimensions:
                           "thr_cosine": thr_cosine
                           }
 
-                try:
+                '''try:
                     pool = Pool() # remove number to use all
                     segment = Segment(dirpath,arguments['n_cluster'],kwargs)
                     results = pool.map(segment, sorted(images))
@@ -105,16 +105,15 @@ for d in dimensions:
                             selected_pri[filename] = pri
                 finally: # To make sure processes are closed in the end, even if errors happen
                     pool.close()
-                    pool.join()
+                    pool.join()'''
 
-                '''for filename in sorted(images):
+                for filename in sorted(images):
                     #g = GeST(dirpath+images[0], arguments['n_cluster'], **kwargs)
                     #g.segmentation()
                     g = GeST(dirpath+filename, arguments['n_cluster'], **kwargs)
                     g.segmentation()
                     # groundtruth comparison
                     pri, pri_merged = g.compare(arguments['groundtruth'],filename)
-                    print(filename)
 
                     if(arguments['groundtruth'] != ""):
                         mean_pri[filename] = pri
@@ -126,8 +125,8 @@ for d in dimensions:
                         if (filename in hardimages):
                             selected_pri[filename] = pri_merged
                         else:
-                            selected_pri[filename] = pri'''
-                print("iteration {}/{}/{} done: classical {}, selected {}, best {}".format(d,thr_pixels,thr_cosine,mean(mean_pri.values()),mean(selected_pri.values()), mean(best_pri.values())), file=stderr)
+                            selected_pri[filename] = pri
+                    #print("iteration {}/{}/{} done: classical {}, selected {}, best {}".format(d,thr_pixels,thr_cosine,mean(mean_pri.values()),mean(selected_pri.values()), mean(best_pri.values())), file=stderr)
 
                 PRI.append(mean(mean_pri.values()))
                 #PRI_CONTIGUOUS.append(mean(mean_pri_contiguous.values()))

@@ -1,0 +1,20 @@
+===== ROUND: 50 and 0.998 =====
+Mean Probabilistic Rand Index: 0.7819009950260128
+Mean Merged Probabilistic Rand Index: 0.7018654848843853
+Mean Best Probabilistic Rand Index: 0.8076655371559919
+Mean Selected Probabilistic Rand Index: 0.8019530612470339
+===== ROUND: 150 and 0.998 =====
+Mean Probabilistic Rand Index: 0.7825874666138769
+Mean Merged Probabilistic Rand Index: 0.6979826387849238
+Mean Best Probabilistic Rand Index: 0.8092102459246627
+Mean Selected Probabilistic Rand Index: 0.8040241848371754
+===== ROUND: 250 and 0.998 =====
+Mean Probabilistic Rand Index: 0.78189742866889
+Mean Merged Probabilistic Rand Index: 0.6976961702656863
+Mean Best Probabilistic Rand Index: 0.8063973712294277
+Mean Selected Probabilistic Rand Index: 0.8016465690673005
+===== ROUND: 350 and 0.998 =====
+Mean Probabilistic Rand Index: 0.7818190266315993
+Mean Merged Probabilistic Rand Index: 0.6996954668777084
+Mean Best Probabilistic Rand Index: 0.8073152528986612
+Mean Selected Probabilistic Rand Index: 0.802746795096527

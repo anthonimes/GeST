@@ -283,6 +283,43 @@ def _color_features(labels,image_lab,image):
 
     return feature_vector
 
+# FIXME: is there something built-in in skimage?
+def _update_color_features(coords,image_lab,image):
+    """
+    Function that computes a feature vector for a given image and a set of segments
+
+    :param labels:
+        The segmentation to start from
+    :param image_lab:
+        The image in L*a*b* space
+    """
+    mean_lab, stdev_lab=list(), list()
+
+    # getting coordinates of region
+    size_coords=len(coords)
+    L_value, a_value, b_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
+    #R_value, G_value, B_value=[0]*len(coords),[0]*len(coords),[0]*len(coords)
+    for (l,(x,y)) in enumerate(coords):
+        L,a,b=image_lab[(x,y)]
+        L_value[l]=L
+        a_value[l]=a
+        b_value[l]=b
+        # ---DEV--- doing the same for RGB color space
+        '''R,G,B=image[(x,y)]
+        R_value[l]=R
+        G_value[l]=G
+        B_value[l]=B'''
+    # FIXME: statistics functions are very slow: try with numpy?
+    mean_lab=[sum(L_value)/size_coords,sum(a_value)/size_coords,sum(b_value)/size_coords]
+    stdev_lab=[numpy.std(L_value),numpy.std(a_value),numpy.std(b_value)]
+    # ---DEV--- RGB killed results: MAYBE THIS IS BECAUSE THE SCALES ARE VERY DIFFERENT?
+    # ---DEV--- or mayve this is because HOG is not computed on corresponding channels?! ...NO SINCE GRAYSCALE
+    '''mean_rgb[i]=[sum(R_value)/size_coords,sum(G_value)/size_coords,sum(B_value)/size_coords]
+    stdev_rgb[i]=[numpy.std(R_value),numpy.std(G_value),numpy.std(B_value)]
+    feature_vector[i]=mean_rgb[i]+stdev_rgb[i]'''
+
+    return mean_lab+stdev_lab
+
 # FIXME: add Davies-Bouldin and Caliński-Harabasz
 def silhouette(points,kmax):
     """

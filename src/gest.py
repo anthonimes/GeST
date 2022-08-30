@@ -14,7 +14,7 @@ from gensim.models import Word2Vec
 from pymeanshift import segment
 from cv2 import imread
 from src.utils.node2vec.src import node2vec as nv
-from src.helper import _color_features, silhouette, _hog_channel_gradient, _get_bins, _normalized_hog
+from src.helper import _update_color_features, _color_features, silhouette, _hog_channel_gradient, _get_bins, _normalized_hog
 
 from numpy import asarray, unique, amax, copy, argwhere, zeros, where, amin
 from scipy.spatial.distance import cosine
@@ -98,7 +98,7 @@ class GeST:
             self.compute_preseg()
             #self._n_cluster = min(self._n_cluster, self._number_of_regions)
 
-        self._feature_vector = asarray(_color_features(self._presegmentation,self._image_lab,self._image_rgb))
+        self._FV = asarray(_color_features(self._presegmentation,self._image_lab,None))
         # ---DEV--- use image_lab not image!!! IF BAD, USE img_as_float
         #self._hog = _hog_channel_gradient(rgb2gray(self._image),multichannel=False)
         self._hog = _hog_channel_gradient(self._image_lab,multichannel=True)
@@ -163,7 +163,7 @@ class GeST:
         walks = Gn2v.simulate_walks(20, 20)
         walks = [list(map(str, walk)) for walk in walks]
         # FIXME: allow parameterization
-        model = Word2Vec(walks, size=self._dimensions, window=5, min_count=0, sg=1, workers=4, iter=1)
+        model = Word2Vec(walks, vector_size=self._dimensions, window=5, min_count=0, sg=1, workers=4, epochs=1)
 
         begin = time.process_time() 
         representation = model.wv
@@ -199,7 +199,7 @@ class GeST:
             for j,value in enumerate(line):
                 self._segmentation[l][j] = new_labels[value-1]+1
 
-        # small regions merging --- noise removal
+    # small regions merging --- noise removal
     def _pixels_merge(self,regions,thr_pixels=750):
         """
         (Private) Procedure that merge small segments with their closest neighbor.
@@ -219,7 +219,7 @@ class GeST:
         for region in regions:
             # getting the percentage of orientation bins for every region
             FV = self._feature_vector_merge[region.label-1].tolist()
-            HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
+            #HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
             for_cosine[region.label-1] = FV#+HOG
         # ---DEV--- try with this
         for_cosine = normalize(asarray(for_cosine))
@@ -237,8 +237,11 @@ class GeST:
                 for (x,y) in max_label.coords:
                     self._segmentation_merged[(x,y)] = min_label.label
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
-                self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
-                self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
+                coords=regions[_findregion(min_label.label)].coords.tolist()
+                coords.extend(regions[_findregion(max_label.label)].coords)
+                self._feature_vector_merge[min_label.label-1] = asarray(_update_color_features(coords,self._image_lab,self._image_rgb))
+                #self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
+                #self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
                 return True
         return False
 
@@ -261,7 +264,7 @@ class GeST:
         for region in regions:
             # getting the percentage of orientation bins for every region
             FV = self._feature_vector_merge[region.label-1].tolist()
-            HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
+            #HOG = [self._bins[region.label-1][j][0]/self._bins[region.label-1][j][1] for j in range(9)]
             for_cosine[region.label-1] = FV#+HOG
         # ---DEV--- try with this first
         for_cosine = normalize(asarray(for_cosine))
@@ -280,8 +283,14 @@ class GeST:
                 #labels_merge=(1+labels_merge).reshape(labels.shape)
                 # updating feature vector
                 self._merged_RAG = contracted_nodes(self._merged_RAG,min_label.label,max_label.label,self_loops=False)
-                self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
-                self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
+                # UPDATE --- previous computation was just a proxy: if this is better, 
+                #        --- define a function to update ONE region only
+                # getting pixels' coordinates of merged region to update feature vector
+                coords=regions[_findregion(min_label.label)].coords.tolist()
+                coords.extend(regions[_findregion(max_label.label)].coords)
+                self._feature_vector_merge[min_label.label-1] = asarray(_update_color_features(coords,self._image_lab,self._image_rgb))
+                #self._feature_vector_merge[min_label.label-1] = (self._feature_vector_merge[min_label.label-1]+self._feature_vector_merge[max_label.label-1])/2
+                #self._bins[min_label.label-1] = [(self._bins[min_label.label-1][j][0]+self._bins[max_label.label-1][j][0], self._bins[min_label.label-1][j][1]+self._bins[max_label.label-1][j][1]) for j in range(9)]
                 return True
         return False
 
@@ -364,7 +373,7 @@ class GeST:
             self._embeddings[l].extend(v)
             # --- FV+HOG ---
             # ----DEV--- add also RGB HOG? (try with only this one first ?!)
-            self._embeddings[l].extend([self._bins[l][j][0]/self._bins[l][j][1] for j in range(9)])
+            #self._embeddings[l].extend([self._bins[l][j][0]/self._bins[l][j][1] for j in range(9)])
         end = time.process_time()
         self._print("feature vector computed in {} seconds".format(end-begin), file=sys.stderr)
 
@@ -384,12 +393,12 @@ class GeST:
         plt.show()'''
             
         # we keep only eigenvalues > 1: Kaiser's criterion
-        pca = PCA()
+        '''pca = PCA()
         data = pca.fit_transform(data)
         pca_variance = pca.explained_variance_
         n_components = len([e for e in pca.explained_variance_ if e >= 1])
         pca = PCA(n_components=n_components)
-        data = pca.fit_transform(data)
+        data = pca.fit_transform(data)'''
 
         if(self._n_cluster is None):
             self._n_cluster = min(silhouette(data,25),self._number_of_regions)
@@ -411,9 +420,6 @@ class GeST:
         if(self._domerge):
             self._merge(thr_pixels=self._thr_pixels,thr=self._thr_cosine)
             #self.dev_merge(thr_pixels=self._thr_pixels,thr=self._thr_cosine)
-        if(not(self._docontiguous)):
-                pass
-                # add a bit of code to produce contiguous regions, just in case
         self._number_of_regions = len(unique(self._segmentation))
         self._print("final segmentation has {} regions".format(self._number_of_regions))
 

@@ -52,3 +52,4 @@ def _probabilistic_rand_index(groundtruth, prediction):
         segmentation = groundtruth[i].flatten().tolist()
         score += _rand_index_score(segmentation, prediction.flatten().tolist())
     return score / number_of_ground_truth
+
